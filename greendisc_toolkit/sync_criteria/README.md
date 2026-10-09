@@ -2,7 +2,7 @@
 
 This action generates `criteria.yml` from the upstream [Green DiSC criteria repository](https://github.com/Cambridge-Sustainable-Computing-Lab/greenDiSC).
 
-It shallow-clones upstream into the runner's temporary directory, reads the criteria file for each tier (Bronze, Silver, Gold) of the chosen track, and writes one entry per criterion with its ID, issue label, title and category. Tiers without an upstream file yet are written as empty stubs.
+It clones upstream (history only, no file contents beyond the checked-out commit) into the runner's temporary directory, reads the criteria file for each tier (Bronze, Silver, Gold) of the chosen track, and writes one entry per criterion with its ID, issue label, title and category. Tiers without an upstream file yet are written as empty stubs. `source_commit` is the last upstream commit that changed this track's criteria files, so commits that only touch other upstream files don't change `criteria.yml`.
 
 Only these short fields are extracted. The Green DiSC criteria are licensed [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/) by Green DiSC; their text is never copied into your repository.
 

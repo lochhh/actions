@@ -40,6 +40,8 @@ runs:
         upstream="$RUNNER_TEMP/greendisc-criteria"
         git init -q "$upstream"
         git -C "$upstream" remote add origin "$UPSTREAM_REPO"
-        git -C "$upstream" fetch -q --depth 1 origin "$REF"
+        # Blobless: full history (to find the last commit that changed the
+        # criteria files) without file contents, which are fetched on checkout.
+        git -C "$upstream" fetch -q --filter=blob:none origin "$REF"
         git -C "$upstream" checkout -q FETCH_HEAD
         python "$GITHUB_ACTION_PATH/sync_criteria.py" --upstream "$upstream" --track "$TRACK" --out "$OUTPUT"

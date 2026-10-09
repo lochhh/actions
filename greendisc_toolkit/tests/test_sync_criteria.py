@@ -32,7 +32,7 @@ if not (UPSTREAM / "Criteria").is_dir():
     UPSTREAM.mkdir(parents=True, exist_ok=True)
     git("init", "-q")
     git("remote", "add", "origin", UPSTREAM_URL)
-    git("fetch", "-q", "--depth", "1", "origin", UPSTREAM_SHA)
+    git("fetch", "-q", "--filter=blob:none", "origin", UPSTREAM_SHA)
     git("checkout", "-q", "FETCH_HEAD")
 
 
@@ -58,12 +58,21 @@ EXPECTED = {
 }  # fmt: skip
 
 
+# Last commit touching each track's criteria files as of UPSTREAM_SHA (a merge
+# commit), checked against the GitHub commits API.
+SOURCE_COMMITS = {
+    "RG": "ba489984e043b5150bb2030bc1c2bc80c2d20f86",
+    "CT": "a79a0c069fd828223c1f047f857902b0d68f112d",
+    "RCI": "bac158889df116e350c0d43bafa7e07b29e1722e",
+}
+
+
 @pytest.mark.parametrize("track", EXPECTED)
 def test_track(track):
     """Each track's tiers, versions, IDs and fields match upstream and parse as YAML."""
     data = yaml.safe_load(sc.to_yaml(sc.build(UPSTREAM, track)))
     assert data["track"] == track
-    assert len(data["source_commit"]) == 40
+    assert data["source_commit"] == SOURCE_COMMITS[track]
     assert "greenDiSC" in data["source"]
     for tier in data["tiers"]:
         if tier["name"] not in EXPECTED[track]:
