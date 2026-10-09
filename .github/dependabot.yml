@@ -98,3 +98,11 @@ updates:
       actions:
         patterns:
           - "*"
+  - package-ecosystem: "github-actions"
+    directory: /greendisc_toolkit/save_record
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns:
+          - "*"

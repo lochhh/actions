@@ -1,0 +1,109 @@
+name: 'Green DiSC: save record'
+description: 'Save a Green DiSC record issue (Markdown tables) to CSV files on `/save`, and welcome new records.'
+
+inputs:
+  data-dir:
+    description: 'Directory for the CSV files.'
+    required: false
+    default: 'data'
+  token:
+    description: 'Token with contents: write and issues: write.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.13'
+
+    # Issue content is untrusted: it only reaches the script through env and files.
+    - name: Handle record issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        DATA_DIR: ${{ inputs.data-dir }}
+        EVENT: ${{ github.event_name }}
+        ISSUE: ${{ github.event.issue.number }}
+        AUTHOR: ${{ github.event.issue.user.login }}
+        STATE: ${{ github.event.issue.state }}
+        BODY: ${{ github.event.issue.body }}
+        BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        script="$GITHUB_ACTION_PATH/save_record.py"
+        body_file="$RUNNER_TEMP/record-body.md"
+        message="$RUNNER_TEMP/record-message.md"
+        reply="$RUNNER_TEMP/record-reply.md"
+        printf '%s' "$BODY" > "$body_file"
+
+        kind=$(python "$script" kind --body-file "$body_file")
+        if [ -z "$kind" ]; then
+          echo "Not a Green DiSC record; nothing to do."
+          exit 0
+        fi
+        label="$kind-record"
+        # Templates don't copy labels, so make sure ours exists.
+        gh label create "$label" --color 2E7D32 --description "Green DiSC $kind record" --force > /dev/null
+
+        if [ "$EVENT" = issues ]; then
+          gh issue edit "$ISSUE" --add-label "$label"
+          author_filter=()
+          if [ "$kind" = personal ]; then author_filter=(--author "$AUTHOR"); fi
+          other=$(gh issue list --label "$label" "${author_filter[@]}" --state all \
+            --json number -q ".[] | select(.number != $ISSUE) | .number" | head -n 1)
+          if [ -n "$other" ]; then
+            gh issue close "$ISSUE" --reason "not planned" \
+              --comment "There is already a $kind record: #$other. Please edit that one instead."
+            exit 0
+          fi
+          gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\` to save it. To update it later, edit this issue and comment \`/save\` again."
+          exit 0
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        status=""
+        # Retry on a rejected push: re-apply this record on the latest branch.
+        for attempt in 1 2 3 4 5; do
+          git fetch -q origin "$BRANCH"
+          git reset -q --hard "origin/$BRANCH"
+          if ! python "$script" save --body-file "$body_file" --issue "$ISSUE" \
+              --data-dir "$DATA_DIR" --message-file "$message"; then
+            {
+              echo "Couldn't save this record, so nothing was changed. Please fix:"
+              echo
+              cat "$message"
+              echo
+              echo "Then edit this issue and comment \`/save\` again."
+            } > "$reply"
+            gh issue comment "$ISSUE" --body-file "$reply"
+            exit 0
+          fi
+          git add "$DATA_DIR"
+          if git diff --cached --quiet; then
+            status="No changes since the last save."
+            break
+          fi
+          git commit -q -m "Save Green DiSC record #$ISSUE"
+          if git push -q origin "HEAD:$BRANCH"; then
+            status="Saved in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$(git rev-parse HEAD)."
+            break
+          fi
+          sleep $((attempt * 2))
+        done
+        if [ -z "$status" ]; then
+          echo "::error::Could not push after 5 attempts"
+          exit 1
+        fi
+        {
+          echo "$status"
+          echo
+          cat "$message"
+          echo
+          echo "To change this record, edit this issue and comment \`/save\` again."
+        } > "$reply"
+        gh issue comment "$ISSUE" --body-file "$reply"
+        if [ "$STATE" = open ]; then
+          gh issue close "$ISSUE" --reason completed
+        fi
