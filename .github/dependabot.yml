@@ -90,3 +90,11 @@ updates:
       actions:
         patterns:
           - "actions/*"
+  - package-ecosystem: "github-actions"
+    directory: /greendisc_toolkit/sync_criteria
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns:
+          - "*"
