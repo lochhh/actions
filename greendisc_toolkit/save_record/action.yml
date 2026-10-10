@@ -30,7 +30,13 @@ runs:
         STATE: ${{ github.event.issue.state }}
         BODY: ${{ github.event.issue.body }}
         BRANCH: ${{ github.event.repository.default_branch }}
+        COMMENT: ${{ github.event.comment.body }}
       run: |
+        # A comment must be exactly /save (surrounding whitespace allowed).
+        if [ "$EVENT" = issue_comment ] && ! [[ "$COMMENT" =~ ^[[:space:]]*/save[[:space:]]*$ ]]; then
+          echo "Comment is not /save; nothing to do."
+          exit 0
+        fi
         script="$GITHUB_ACTION_PATH/save_record.py"
         body_file="$RUNNER_TEMP/record-body.md"
         message="$RUNNER_TEMP/record-message.md"

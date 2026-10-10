@@ -3,7 +3,7 @@
 This action saves Green DiSC *record issues* to CSV files. A record issue holds one Markdown table per section (for now: Hardware), created from the toolkit's record issue form.
 
 - **When a record issue is opened**, the action labels it (`personal-record`), and replies with how to save it. Each person can have one personal record: a second one is closed with a link to the first.
-- **When someone comments `/save`**, the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary (including how many values are `unknown`) and closes the issue.
+- **When someone comments exactly `/save`** (other comments, like `/saved it`, are ignored), the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary (including how many values are `unknown`) and closes the issue.
 - **If any row is invalid**, nothing is written: the reply lists each problem by section, row and column.
 
 Blank cells are saved as `unknown`, so missing data stays visible. Missing or reordered columns are fine; unrecognised columns are ignored with a warning. Each CSV has a `record` column with the issue number, which is how a later `/save` finds the rows to replace; edits made directly to the CSV are overwritten by the next `/save` of that issue.
