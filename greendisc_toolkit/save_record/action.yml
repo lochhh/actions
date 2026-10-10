@@ -46,17 +46,26 @@ runs:
         # Templates don't copy labels, so make sure ours exists.
         gh label create "$label" --color 2E7D32 --description "Green DiSC $kind record" --force > /dev/null
 
+        # One record per person (personal) or per repository (group): only the
+        # oldest counts, on open and on /save.
         if [ "$EVENT" = issues ]; then
           gh issue edit "$ISSUE" --add-label "$label"
-          author_filter=()
-          if [ "$kind" = personal ]; then author_filter=(--author "$AUTHOR"); fi
-          other=$(gh issue list --label "$label" "${author_filter[@]}" --state all \
-            --json number -q ".[] | select(.number != $ISSUE) | .number" | head -n 1)
-          if [ -n "$other" ]; then
+        fi
+        author_filter=()
+        if [ "$kind" = personal ]; then author_filter=(--author "$AUTHOR"); fi
+        older=$(gh issue list --label "$label" "${author_filter[@]}" --state all \
+          --json number -q ".[] | select(.number < $ISSUE) | .number" | sort -n | head -n 1)
+        if [ -n "$older" ]; then
+          if [ "$STATE" = open ]; then
             gh issue close "$ISSUE" --reason "not planned" \
-              --comment "There is already a $kind record: #$other. Please edit that one instead."
-            exit 0
+              --comment "There is already a $kind record: #$older. Please edit that one instead."
+          else
+            gh issue comment "$ISSUE" --body "Not saved: the $kind record is #$older. Please edit that one instead."
           fi
+          exit 0
+        fi
+
+        if [ "$EVENT" = issues ]; then
           gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\` to save it. To update it later, edit this issue and comment \`/save\` again."
           exit 0
         fi
@@ -74,7 +83,7 @@ runs:
               echo "Couldn't save this record, so nothing was changed. Please fix:"
               echo
               cat "$message"
-              echo
+              printf '\n\n'
               echo "Then edit this issue and comment \`/save\` again."
             } > "$reply"
             gh issue comment "$ISSUE" --body-file "$reply"
@@ -100,7 +109,7 @@ runs:
           echo "$status"
           echo
           cat "$message"
-          echo
+          printf '\n\n'
           echo "To change this record, edit this issue and comment \`/save\` again."
         } > "$reply"
         gh issue comment "$ISSUE" --body-file "$reply"
