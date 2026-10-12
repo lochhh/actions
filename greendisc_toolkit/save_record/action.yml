@@ -1,5 +1,5 @@
 name: 'Green DiSC: save record'
-description: 'Save a Green DiSC record issue (Markdown tables) to CSV files on `/save`, and welcome new records.'
+description: 'Save a Green DiSC record issue (Markdown tables) to CSV files on `/save`, welcome new records and flag unsaved edits.'
 
 inputs:
   data-dir:
@@ -25,6 +25,9 @@ runs:
         GH_TOKEN: ${{ inputs.token }}
         DATA_DIR: ${{ inputs.data-dir }}
         EVENT: ${{ github.event_name }}
+        ACTION: ${{ github.event.action }}
+        BODY_CHANGED: ${{ github.event.changes.body && 'true' || '' }}
+        LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
         ISSUE: ${{ github.event.issue.number }}
         AUTHOR: ${{ github.event.issue.user.login }}
         STATE: ${{ github.event.issue.state }}
@@ -35,6 +38,11 @@ runs:
         # A comment must be exactly /save (surrounding whitespace allowed).
         if [ "$EVENT" = issue_comment ] && ! [[ "$COMMENT" =~ ^[[:space:]]*/save[[:space:]]*$ ]]; then
           echo "Comment is not /save; nothing to do."
+          exit 0
+        fi
+        # Title-only edits change nothing to save.
+        if [ "$ACTION" = edited ] && [ -z "$BODY_CHANGED" ]; then
+          echo "Body not changed; nothing to do."
           exit 0
         fi
         script="$GITHUB_ACTION_PATH/save_record.py"
@@ -49,12 +57,20 @@ runs:
           exit 0
         fi
         label="$kind-record"
-        # Templates don't copy labels, so make sure ours exists.
+        unsaved="unsaved changes"
+        # Templates don't copy labels, so make sure ours exist.
         gh label create "$label" --color 2E7D32 --description "Green DiSC $kind record" --force > /dev/null
+        gh label create "$unsaved" --color FBCA04 --description "Green DiSC record edited since its last /save" --force > /dev/null
+        # Only edits to issues already labelled as records count (not ones
+        # that merely look like a record).
+        if [ "$ACTION" = edited ] && ! jq -e --arg l "$label" 'index($l)' <<< "$LABELS" > /dev/null; then
+          echo "Not a labelled record; nothing to do."
+          exit 0
+        fi
 
         # One record per person (personal) or per repository (group): only the
         # oldest counts, on open and on /save.
-        if [ "$EVENT" = issues ]; then
+        if [ "$ACTION" = opened ]; then
           gh issue edit "$ISSUE" --add-label "$label"
         fi
         author_filter=()
@@ -62,7 +78,9 @@ runs:
         older=$(gh issue list --label "$label" "${author_filter[@]}" --state all \
           --json number -q ".[] | select(.number < $ISSUE) | .number" | sort -n | head -n 1)
         if [ -n "$older" ]; then
-          if [ "$STATE" = open ]; then
+          if [ "$ACTION" = edited ]; then
+            exit 0
+          elif [ "$STATE" = open ]; then
             gh issue close "$ISSUE" --reason "not planned" \
               --comment "There is already a $kind record: #$older. Please edit that one instead."
           else
@@ -71,8 +89,13 @@ runs:
           exit 0
         fi
 
-        if [ "$EVENT" = issues ]; then
-          gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\` to save it. To update it later, edit this issue and comment \`/save\` again."
+        if [ "$ACTION" = edited ]; then
+          gh issue edit "$ISSUE" --add-label "$unsaved"
+          exit 0
+        fi
+        if [ "$ACTION" = opened ]; then
+          gh issue edit "$ISSUE" --add-label "$unsaved"
+          gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\` to save it. Keep this issue open: to update it later, edit it and comment \`/save\` again."
           exit 0
         fi
 
@@ -116,9 +139,7 @@ runs:
           echo
           cat "$message"
           printf '\n\n'
-          echo "To change this record, edit this issue and comment \`/save\` again."
+          echo "Keep this issue open: to change this record, edit it and comment \`/save\` again."
         } > "$reply"
         gh issue comment "$ISSUE" --body-file "$reply"
-        if [ "$STATE" = open ]; then
-          gh issue close "$ISSUE" --reason completed
-        fi
+        gh issue edit "$ISSUE" --remove-label "$unsaved"
