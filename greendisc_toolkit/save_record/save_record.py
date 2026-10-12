@@ -19,23 +19,19 @@ from pathlib import Path
 
 UNKNOWN = "unknown"
 YEAR = "year"
+LOWER = "lower"
 
 # Section heading -> CSV file and columns. A column is either free text (None),
-# a list of allowed values, or YEAR. "unknown" is always allowed, and blank
-# cells are stored as "unknown".
+# free text lower-cased (LOWER, for values counted in summaries), a list of
+# allowed values, or YEAR. "unknown" is always allowed, and blank cells are
+# stored as "unknown".
 SECTIONS = {
     "Hardware": {
         "file": "hardware.csv",
         "columns": {
-            "Type": [
-                "laptop",
-                "desktop",
-                "monitor",
-                "tablet",
-                "external drive",
-                "docking station",
-                "other",
-            ],
+            # ponytail: free text; spelling variants split summary counts,
+            # add a synonym map in export_summary if that ever matters.
+            "Type": LOWER,
             "Model": None,
             "Supplier": None,
             "Purchased": YEAR,
@@ -142,7 +138,8 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
     value
         Cell text.
     spec
-        Column spec: None (free text), a list of allowed values, or `YEAR`.
+        Column spec: None (free text), `LOWER`, a list of allowed values, or
+        `YEAR`.
     year_max
         Latest acceptable year.
 
@@ -160,6 +157,8 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
     value = " ".join(value.split())
     if not value or value.lower() == UNKNOWN:
         return UNKNOWN
+    if spec == LOWER:
+        return value.lower()
     if isinstance(spec, list):
         if value.lower() not in spec:
             raise ValueError(f"'{value}' is not one of: {', '.join(spec)}, unknown")

@@ -8,10 +8,14 @@ import pytest
 import save_record as sr
 
 TABLE = """\
+<!--
+Type: laptop, desktop, ...
+Status: in use, unused, disposed
+-->
 | Type | Model | Supplier | Purchased | Warranty | Status | Action | Location | Asset tag |
 |------|-------|----------|-----------|----------|--------|--------|----------|-----------|
 | Laptop | XPS 13 | Dell | 2022 | 3 years | in use | | | |
-| monitor | | | unknown | | Unused | donate | | |
+| External  Drive | | | unknown | | Unused | donate | | |
 | | | | | | | | | |
 """
 
@@ -59,7 +63,7 @@ def test_record_kind():
 
 
 def test_parse_normalises_and_skips_blank_rows():
-    """Values are lower-cased where enumerated, blanks become unknown."""
+    """Hint comments are ignored, Type and listed values are lower-cased."""
     rows, warnings = sr.parse_record(body())
     assert warnings == []
     assert rows["Hardware"] == [
@@ -75,7 +79,7 @@ def test_parse_normalises_and_skips_blank_rows():
             "asset_tag": "unknown",
         },
         {
-            "type": "monitor",
+            "type": "external drive",
             "model": "unknown",
             "supplier": "unknown",
             "purchased": "unknown",
@@ -111,12 +115,12 @@ def test_invalid_rows_report_every_problem():
     """All invalid cells are reported together, with section, row and column."""
     table = (
         "| Type | Purchased | Status |\n|---|---|---|\n"
-        "| phone | 22 | in use |\n| laptop | 2020 |\n"
+        "| phone | 22 | broken |\n| laptop | 2020 |\n"
     )
     with pytest.raises(sr.RecordError) as e:
         sr.parse_record(body(table))
     message = str(e.value)
-    assert "Hardware, row 1, Type: 'phone' is not one of" in message
+    assert "Hardware, row 1, Status: 'broken' is not one of" in message
     assert "Hardware, row 1, Purchased: '22' is not a year" in message
     assert "Hardware, row 2: has 2 cells, expected 3" in message
 
@@ -140,7 +144,7 @@ def test_invalid_record_writes_nothing(tmp_path):
     sr.save(body(), 5, tmp_path)
     before = (tmp_path / "hardware.csv").read_bytes()
     with pytest.raises(sr.RecordError):
-        sr.save(body("| Type |\n|---|\n| phone |\n"), 5, tmp_path)
+        sr.save(body("| Status |\n|---|\n| broken |\n"), 5, tmp_path)
     assert (tmp_path / "hardware.csv").read_bytes() == before
 
 
@@ -150,11 +154,11 @@ def test_cli_exit_status(tmp_path):
     msg = tmp_path / "msg.md"
     args = ["save", "--body-file", str(src), "--issue", "1"]
     args += ["--data-dir", str(tmp_path), "--message-file", str(msg)]
-    src.write_text(body("| Type |\n|---|\n| phone |\n"), encoding="utf-8")
+    src.write_text(body("| Status |\n|---|\n| broken |\n"), encoding="utf-8")
     with pytest.raises(SystemExit) as e:
         sr.main(args)
     assert e.value.code == 1
-    assert "phone" in msg.read_text(encoding="utf-8")
+    assert "broken" in msg.read_text(encoding="utf-8")
     src.write_text(body(), encoding="utf-8")
     sr.main(args)
     assert "2 item(s)" in msg.read_text(encoding="utf-8")
