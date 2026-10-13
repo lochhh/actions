@@ -20,11 +20,18 @@ from pathlib import Path
 UNKNOWN = "unknown"
 YEAR = "year"
 LOWER = "lower"
+SIZE = "size"
+DATE = "date"
+SIZE_RE = re.compile(
+    r"(?P<approx>~|about|approx\.?|approximately)?\s*"
+    r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>[kmgtp]b)",
+    re.IGNORECASE,
+)
 
 # Section heading -> CSV file and columns. A column is either free text (None),
 # free text lower-cased (LOWER, for values counted in summaries), a list of
-# allowed values, or YEAR. "unknown" is always allowed, and blank cells are
-# stored as "unknown".
+# allowed values, YEAR, SIZE (e.g. "~3 TB") or DATE (YYYY-MM-DD). "unknown" is
+# always allowed, and blank cells are stored as "unknown".
 SECTIONS = {
     "Hardware": {
         "file": "hardware.csv",
@@ -42,8 +49,39 @@ SECTIONS = {
             "Asset tag": None,
         },
     },
+    "Data resources": {
+        "file": "data-resources.csv",
+        "columns": {
+            "Name": None,
+            "Hosted by": ["us", "external"],
+            "Location": None,
+            "Size": SIZE,
+            "If lost": ["easy to replace", "hard to replace", "irreplaceable"],
+            "Status": ["in use", "archived", "deleted"],
+        },
+    },
+    "Data cleaning": {
+        "file": "data-cleaning.csv",
+        "columns": {"Date": DATE, "Scope": None, "Freed": SIZE, "Next": DATE},
+    },
+    "Pipelines": {
+        "file": "pipelines.csv",
+        "columns": {
+            "Name": None,
+            "Runs on": LOWER,
+            "Runtime": None,
+            "Resources": None,
+            "Runs": None,
+            "Status": ["active", "retired"],
+        },
+    },
 }
-RECORD_KINDS = {"personal": ["Hardware"]}
+# Record kind -> its sections. A section may belong to several kinds (the group
+# record will also have Data cleaning); a kind is recognised by a heading that
+# no other kind has.
+RECORD_KINDS = {
+    "personal": ["Hardware", "Data resources", "Data cleaning", "Pipelines"],
+}
 
 
 class RecordError(Exception):
@@ -101,7 +139,8 @@ def record_kind(body: str) -> str | None:
     """
     headings = split_sections(body)
     for kind, sections in RECORD_KINDS.items():
-        if any(s in headings for s in sections):
+        others = {s for k, ss in RECORD_KINDS.items() if k != kind for s in ss}
+        if any(s in headings and s not in others for s in sections):
             return kind
     return None
 
@@ -138,8 +177,8 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
     value
         Cell text.
     spec
-        Column spec: None (free text), `LOWER`, a list of allowed values, or
-        `YEAR`.
+        Column spec: None (free text), `LOWER`, a list of allowed values,
+        `YEAR`, `SIZE` or `DATE`.
     year_max
         Latest acceptable year.
 
@@ -167,11 +206,24 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
         value.isdigit() and len(value) == 4 and 1980 <= int(value) <= year_max
     ):
         raise ValueError(f"'{value}' is not a year (e.g. 2023)")
+    if spec == SIZE:
+        m = SIZE_RE.fullmatch(value)
+        if not m:
+            raise ValueError(f"'{value}' is not a size (e.g. 500 GB, ~3 TB)")
+        approx = "~" if m["approx"] else ""
+        return f"{approx}{m['number']} {m['unit'].upper()}"
+    if spec == DATE:
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                raise ValueError
+            datetime.date.fromisoformat(value)
+        except ValueError:
+            raise ValueError(f"'{value}' is not a date (e.g. 2026-10-13)") from None
     return value
 
 
 def parse_record(body: str) -> tuple[dict[str, list[dict[str, str]]], list[str]]:
-    """Parse and validate every known section of a record issue.
+    """Parse and validate the sections of a record issue's kind.
 
     Parameters
     ----------
@@ -195,8 +247,8 @@ def parse_record(body: str) -> tuple[dict[str, list[dict[str, str]]], list[str]]
     year_max = datetime.datetime.now(datetime.UTC).year + 1
     sections = split_sections(body)
     result, warnings, errors = {}, [], []
-    for name, section in SECTIONS.items():
-        columns = section["columns"]
+    for name in RECORD_KINDS.get(record_kind(body), []):
+        columns = SECTIONS[name]["columns"]
         headers, rows = parse_table(sections.get(name, ""))
         known = {h.lower(): h for h in columns}
         for h in headers:
@@ -287,7 +339,7 @@ def save(body: str, issue: int, data_dir: Path) -> str:
         write_csv(data_dir / section["file"], issue, columns, rows)
         unknown = sum(v == UNKNOWN for r in rows for v in r.values())
         lines.append(
-            f"- **{name}**: {len(rows)} item(s) in `{data_dir.as_posix()}/"
+            f"- **{name}**: {len(rows)} row(s) in `{data_dir.as_posix()}/"
             f"{section['file']}`" + (f", {unknown} unknown value(s)" if unknown else "")
         )
     lines += [f"- {w}" for w in warnings]

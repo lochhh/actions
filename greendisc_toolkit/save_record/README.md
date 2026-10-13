@@ -1,6 +1,6 @@
 # Save Green DiSC records
 
-This action saves Green DiSC *record issues* to CSV files. A record issue holds one Markdown table per section (for now: Hardware), created from the toolkit's record issue form.
+This action saves Green DiSC *record issues* to CSV files. A record issue holds one Markdown table per section (personal records: Hardware, Data resources, Data cleaning, Pipelines), created from the toolkit's record issue form.
 
 - **When a record issue is opened**, the action labels it (`personal-record` and `unsaved changes`) and replies with how to save it. Each person can have one personal record: a second one is closed with a link to the first.
 - **When someone comments exactly `/save`** (other comments, like `/saved it`, are ignored), the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary (including how many values are `unknown`) and removes the `unsaved changes` label. The issue stays open, so it can be updated later.
