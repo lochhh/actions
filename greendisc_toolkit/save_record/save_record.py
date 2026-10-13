@@ -22,6 +22,7 @@ YEAR = "year"
 LOWER = "lower"
 SIZE = "size"
 DATE = "date"
+OPTIONAL = "optional"
 SIZE_RE = re.compile(
     r"(?P<approx>~|about|approx\.?|approximately)?\s*"
     r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>[kmgtp]b)",
@@ -30,8 +31,9 @@ SIZE_RE = re.compile(
 
 # Section heading -> CSV file and columns. A column is either free text (None),
 # free text lower-cased (LOWER, for values counted in summaries), a list of
-# allowed values, YEAR, SIZE (e.g. "~3 TB") or DATE (YYYY-MM-DD). "unknown" is
-# always allowed, and blank cells are stored as "unknown".
+# allowed values, YEAR, SIZE (e.g. "~3 TB"), DATE (YYYY-MM-DD) or OPTIONAL (free
+# text that may stay blank). "unknown" is always allowed, and other blank cells
+# are stored as "unknown".
 SECTIONS = {
     "Hardware": {
         "file": "hardware.csv",
@@ -47,6 +49,7 @@ SECTIONS = {
             "Action": None,
             "Location": None,
             "Asset tag": None,
+            "Notes": OPTIONAL,
         },
     },
     "Data resources": {
@@ -58,11 +61,18 @@ SECTIONS = {
             "Size": SIZE,
             "If lost": ["easy to replace", "hard to replace", "irreplaceable"],
             "Status": ["in use", "archived", "deleted"],
+            "Notes": OPTIONAL,
         },
     },
     "Data cleaning": {
         "file": "data-cleaning.csv",
-        "columns": {"Date": DATE, "Scope": None, "Freed": SIZE, "Next": DATE},
+        "columns": {
+            "Date": DATE,
+            "Scope": None,
+            "Freed": SIZE,
+            "Next": DATE,
+            "Notes": OPTIONAL,
+        },
     },
     "Pipelines": {
         "file": "pipelines.csv",
@@ -73,6 +83,7 @@ SECTIONS = {
             "Resources": None,
             "Runs": None,
             "Status": ["active", "retired"],
+            "Notes": OPTIONAL,
         },
     },
 }
@@ -178,14 +189,14 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
         Cell text.
     spec
         Column spec: None (free text), `LOWER`, a list of allowed values,
-        `YEAR`, `SIZE` or `DATE`.
+        `YEAR`, `SIZE`, `DATE` or `OPTIONAL`.
     year_max
         Latest acceptable year.
 
     Returns
     -------
     str
-        The normalised value; blank becomes ``"unknown"``.
+        The normalised value; blank becomes ``"unknown"`` unless `OPTIONAL`.
 
     Raises
     ------
@@ -194,6 +205,8 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
 
     """
     value = " ".join(value.split())
+    if spec == OPTIONAL:
+        return value
     if not value or value.lower() == UNKNOWN:
         return UNKNOWN
     if spec == LOWER:

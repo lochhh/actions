@@ -77,6 +77,7 @@ def test_parse_normalises_and_skips_blank_rows():
             "action": "unknown",
             "location": "unknown",
             "asset_tag": "unknown",
+            "notes": "",
         },
         {
             "type": "external drive",
@@ -88,6 +89,7 @@ def test_parse_normalises_and_skips_blank_rows():
             "action": "donate",
             "location": "unknown",
             "asset_tag": "unknown",
+            "notes": "",
         },
     ]
 
@@ -217,3 +219,9 @@ def test_kind_from_unique_heading(monkeypatch):
     assert sr.record_kind("### Data cleaning\r\n\r\n| Date |") is None
     assert sr.record_kind("### Compute\r\n\r\n### Data cleaning\r\n") == "group"
     assert sr.record_kind("### Pipelines\r\n\r\n### Data cleaning\r\n") == "personal"
+
+
+def test_blank_notes_stay_blank(tmp_path):
+    """Notes are optional: a blank note is not counted as unknown."""
+    sr.save(body("| Type | Notes |\n|---|---|\n| laptop | |\n"), 1, tmp_path)
+    assert read(tmp_path / "hardware.csv")[0]["notes"] == ""
