@@ -34,6 +34,7 @@ runs:
         BODY: ${{ github.event.issue.body }}
         BRANCH: ${{ github.event.repository.default_branch }}
         COMMENT: ${{ github.event.comment.body }}
+        COMMENTER: ${{ github.event.comment.user.login }}
       run: |
         # A comment must be exactly /save (surrounding whitespace allowed).
         if [ "$EVENT" = issue_comment ] && ! [[ "$COMMENT" =~ ^[[:space:]]*/save[[:space:]]*$ ]]; then
@@ -96,6 +97,20 @@ runs:
         if [ "$ACTION" = opened ]; then
           gh issue edit "$ISSUE" --add-label "$unsaved"
           gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\` to save it. Keep this issue open: to update it later, edit it and comment \`/save\` again."
+          exit 0
+        fi
+
+        # author_association lets read-only members through, so check the
+        # commenter's actual role: the record's owner needs write access,
+        # anyone else maintain or admin (e.g. the representative).
+        role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$COMMENTER/permission" -q .role_name || echo none)
+        case "$role" in
+          admin|maintain) ;;
+          write) [ "$COMMENTER" = "$AUTHOR" ] || denied="only @$AUTHOR (the record's owner) or a maintainer can save this record" ;;
+          *) denied="saving needs write access to this repository; ask the Green DiSC representative" ;;
+        esac
+        if [ -n "${denied:-}" ]; then
+          gh issue comment "$ISSUE" --body "Not saved: $denied."
           exit 0
         fi
 
