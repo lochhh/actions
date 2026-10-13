@@ -81,7 +81,7 @@ SECTIONS = {
             "Runs on": LOWER,
             "Runtime": None,
             "Resources": None,
-            "Runs": None,
+            "Frequency": None,
             "Status": ["active", "retired"],
             "Notes": OPTIONAL,
         },
