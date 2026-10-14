@@ -23,16 +23,20 @@ LOWER = "lower"
 SIZE = "size"
 DATE = "date"
 OPTIONAL = "optional"
+COUNT = "count"
 SIZE_RE = re.compile(
     r"(?P<approx>~|about|approx\.?|approximately)?\s*"
     r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>[kmgtp]b)",
     re.IGNORECASE,
 )
+COUNT_RE = re.compile(
+    r"(?P<approx>~|about|approx\.?|approximately)?\s*(?P<number>\d+)", re.IGNORECASE
+)
 
 # Section heading -> CSV file and columns. A column is either free text (None),
 # free text lower-cased (LOWER, for values counted in summaries), a list of
-# allowed values, YEAR, SIZE (e.g. "~3 TB"), DATE (YYYY-MM-DD) or OPTIONAL (free
-# text that may stay blank). "unknown" is always allowed, and other blank cells
+# allowed values, YEAR, SIZE (e.g. "~3 TB"), DATE (YYYY-MM-DD), COUNT (e.g.
+# "~40") or OPTIONAL (free text that may stay blank). "unknown" is always allowed, and other blank cells
 # are stored as "unknown".
 SECTIONS = {
     "Hardware": {
@@ -74,6 +78,29 @@ SECTIONS = {
             "Notes": OPTIONAL,
         },
     },
+    "Training": {
+        "file": "training.csv",
+        "columns": {
+            "Date": DATE,
+            "Title": None,
+            "Format": LOWER,
+            "Attendees": COUNT,
+            "Materials": None,
+            "Notes": OPTIONAL,
+        },
+    },
+    "Sharing and promotion": {
+        "file": "sharing.csv",
+        "columns": {
+            "Date": DATE,
+            "Kind": ["shared resource", "promotion"],
+            "What": None,
+            "How": None,
+            "People reached": COUNT,
+            "Link": None,
+            "Notes": OPTIONAL,
+        },
+    },
     "Pipelines": {
         "file": "pipelines.csv",
         "columns": {
@@ -92,6 +119,7 @@ SECTIONS = {
 # no other kind has.
 RECORD_KINDS = {
     "personal": ["Hardware", "Data resources", "Data cleaning", "Pipelines"],
+    "group": ["Training", "Sharing and promotion", "Data cleaning"],
 }
 
 
@@ -189,7 +217,7 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
         Cell text.
     spec
         Column spec: None (free text), `LOWER`, a list of allowed values,
-        `YEAR`, `SIZE`, `DATE` or `OPTIONAL`.
+        `YEAR`, `SIZE`, `DATE`, `COUNT` or `OPTIONAL`.
     year_max
         Latest acceptable year.
 
@@ -225,6 +253,11 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
             raise ValueError(f"'{value}' is not a size (e.g. 500 GB, ~3 TB)")
         approx = "~" if m["approx"] else ""
         return f"{approx}{m['number']} {m['unit'].upper()}"
+    if spec == COUNT:
+        m = COUNT_RE.fullmatch(value)
+        if not m:
+            raise ValueError(f"'{value}' is not a number (e.g. 12, ~40)")
+        return f"{'~' if m['approx'] else ''}{m['number']}"
     if spec == DATE:
         try:
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):

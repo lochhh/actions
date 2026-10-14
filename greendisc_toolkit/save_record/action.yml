@@ -101,12 +101,13 @@ runs:
         fi
 
         # author_association lets read-only members through, so check the
-        # commenter's actual role: the record's owner needs write access,
-        # anyone else maintain or admin (e.g. the representative).
+        # commenter's actual role: anyone with write access can save the group
+        # record and their own personal record; other personal records need
+        # maintain or admin (e.g. the representative).
         role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$COMMENTER/permission" -q .role_name || echo none)
         case "$role" in
           admin|maintain) ;;
-          write) [ "$COMMENTER" = "$AUTHOR" ] || denied="only @$AUTHOR (the record's owner) or a maintainer can save this record" ;;
+          write) [ "$kind" = group ] || [ "$COMMENTER" = "$AUTHOR" ] || denied="only @$AUTHOR (the record's owner) or a maintainer can save this record" ;;
           *) denied="saving needs write access to this repository; ask the Green DiSC representative" ;;
         esac
         if [ -n "${denied:-}" ]; then

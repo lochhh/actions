@@ -212,12 +212,10 @@ def test_sections_saved_to_own_files(tmp_path):
     assert message.count("1 row(s)") == 4
 
 
-def test_kind_from_unique_heading(monkeypatch):
-    """A heading shared by two kinds doesn't identify a record on its own."""
-    kinds = {**sr.RECORD_KINDS, "group": ["Compute", "Data cleaning"]}
-    monkeypatch.setattr(sr, "RECORD_KINDS", kinds)
+def test_kind_from_unique_heading():
+    """Data cleaning is in both kinds, so it doesn't identify a record alone."""
     assert sr.record_kind("### Data cleaning\r\n\r\n| Date |") is None
-    assert sr.record_kind("### Compute\r\n\r\n### Data cleaning\r\n") == "group"
+    assert sr.record_kind("### Training\r\n\r\n### Data cleaning\r\n") == "group"
     assert sr.record_kind("### Pipelines\r\n\r\n### Data cleaning\r\n") == "personal"
 
 
@@ -225,3 +223,34 @@ def test_blank_notes_stay_blank(tmp_path):
     """Notes are optional: a blank note is not counted as unknown."""
     sr.save(body("| Type | Notes |\n|---|---|\n| laptop | |\n"), 1, tmp_path)
     assert read(tmp_path / "hardware.csv")[0]["notes"] == ""
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [("12", "12"), ("~40", "~40"), ("about 40", "~40")]
+)
+def test_count_normalised(value, expected):
+    """Counts accept an approximate marker."""
+    assert sr.validate(value, sr.COUNT, 2030) == expected
+
+
+@pytest.mark.parametrize("value", ["lots", "4.5", "~"])
+def test_count_must_be_whole_number(value):
+    """A count must be a whole number."""
+    with pytest.raises(ValueError, match="is not a number"):
+        sr.validate(value, sr.COUNT, 2030)
+
+
+def test_group_record_saved(tmp_path):
+    """A group record saves its own sections, including shared Data cleaning."""
+    text = (
+        "### Training\n\n| Date | Title | Attendees |\n|---|---|---|\n"
+        "| 2026-10-01 | Green coding | ~25 |\n\n"
+        "### Sharing and promotion\n\n| Date | Kind | People reached |\n"
+        "|---|---|---|\n| 2026-10-02 | Promotion | 40 |\n\n"
+        "### Data cleaning\n\n| Date | Freed |\n|---|---|\n| 2026-09-30 | 2 TB |\n"
+    )
+    sr.save(text, 9, tmp_path)
+    assert read(tmp_path / "training.csv")[0]["attendees"] == "~25"
+    assert read(tmp_path / "sharing.csv")[0]["kind"] == "promotion"
+    assert read(tmp_path / "data-cleaning.csv")[0]["record"] == "9"
+    assert not (tmp_path / "hardware.csv").exists()
