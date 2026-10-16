@@ -354,6 +354,38 @@ def write_csv(path: Path, issue: int, columns: list[str], rows: list[dict]) -> N
         writer.writerows(all_rows)
 
 
+def tick_check_in(body: str, record: int) -> tuple[str, bool]:
+    """Tick a record's lines in a review check-in.
+
+    Check-in lines the bot tracks end with ``<!-- record:N -->``; lines without
+    a marker are reminders and don't block closing.
+
+    Parameters
+    ----------
+    body
+        Check-in issue body.
+    record
+        Number of the record that was saved.
+
+    Returns
+    -------
+    body : str
+        Body with that record's lines ticked.
+    complete : bool
+        Whether every tracked line is now ticked.
+
+    """
+    marker = f"<!-- record:{record} -->"
+    lines = [
+        ln.replace("- [ ]", "- [x]", 1) if marker in ln else ln
+        for ln in body.splitlines()
+    ]
+    complete = not any(
+        re.match(r"\s*- \[ \] .*<!-- record:\d+ -->", ln) for ln in lines
+    )
+    return "\n".join(lines) + "\n", complete
+
+
 def save(body: str, issue: int, data_dir: Path) -> str:
     """Validate a record issue and write its rows to the CSV files.
 
@@ -397,7 +429,9 @@ def main(argv: list[str] | None = None) -> None:
 
     ``kind`` prints the record kind (or nothing). ``save`` writes the CSV
     files and the reply message; it exits with status 1 and writes the errors
-    to the message file if the record is invalid.
+    to the message file if the record is invalid. ``tick`` ticks record
+    ``--issue``'s lines in the check-in body file, in place, and prints
+    ``complete`` or ``open``.
 
     Parameters
     ----------
@@ -406,7 +440,7 @@ def main(argv: list[str] | None = None) -> None:
 
     """
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=["kind", "save"])
+    p.add_argument("command", choices=["kind", "save", "tick"])
     p.add_argument("--body-file", type=Path, required=True)
     p.add_argument("--issue", type=int)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -415,6 +449,11 @@ def main(argv: list[str] | None = None) -> None:
     body = args.body_file.read_text(encoding="utf-8")
     if args.command == "kind":
         print(record_kind(body) or "")
+        return
+    if args.command == "tick":
+        body, complete = tick_check_in(body, args.issue)
+        args.body_file.write_text(body, encoding="utf-8")
+        print("complete" if complete else "open")
         return
     try:
         message = save(body, args.issue, args.data_dir)

@@ -254,3 +254,18 @@ def test_group_record_saved(tmp_path):
     assert read(tmp_path / "sharing.csv")[0]["kind"] == "promotion"
     assert read(tmp_path / "data-cleaning.csv")[0]["record"] == "9"
     assert not (tmp_path / "hardware.csv").exists()
+
+
+def test_tick_check_in_closes_when_tracked_lines_done():
+    """Saving a record ticks its lines; reminders without a marker don't count."""
+    body = (
+        "Intro\n"
+        "- [ ] Your record #8 <!-- record:8 -->\n"
+        "- [ ] The group record #9: add rows\n"
+        "- [ ] Save the group record #9 <!-- record:9 -->\n"
+    )
+    body, complete = sr.tick_check_in(body, 8)
+    assert "- [x] Your record #8" in body and not complete
+    body, complete = sr.tick_check_in(body, 9)
+    assert "- [x] Save the group record" in body and complete
+    assert "- [ ] The group record #9: add rows" in body

@@ -6,6 +6,10 @@ inputs:
     description: 'Directory for the CSV files.'
     required: false
     default: 'data'
+  config:
+    description: 'Path of config.yml; its representative (name, contact) is named in replies.'
+    required: false
+    default: 'config.yml'
   token:
     description: 'Token with contents: write and issues: write.'
     required: false
@@ -24,6 +28,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
         DATA_DIR: ${{ inputs.data-dir }}
+        CONFIG: ${{ inputs.config }}
         EVENT: ${{ github.event_name }}
         ACTION: ${{ github.event.action }}
         BODY_CHANGED: ${{ github.event.changes.body && 'true' || '' }}
@@ -59,6 +64,11 @@ runs:
         fi
         label="$kind-record"
         unsaved="unsaved changes"
+        # Name the representative in replies when config.yml says who it is.
+        rep_name=$(yq '.representative.name // ""' "$CONFIG" 2>/dev/null || true)
+        rep_contact=$(yq '.representative.contact // ""' "$CONFIG" 2>/dev/null || true)
+        rep="the Green DiSC representative"
+        if [ -n "$rep_name" ]; then rep="$rep, $rep_name${rep_contact:+ ($rep_contact)}"; fi
         # Templates don't copy labels, so make sure ours exist.
         gh label create "$label" --color 2E7D32 --description "Green DiSC $kind record" --force > /dev/null
         gh label create "$unsaved" --color FBCA04 --description "Green DiSC record edited since its last /save" --force > /dev/null
@@ -109,11 +119,11 @@ runs:
           admin|maintain) ;;
           write)
             if [ "$kind" = group ]; then
-              denied="the group record is saved by a maintainer, such as the Green DiSC representative. Your edits are kept and marked \`unsaved changes\` until then"
+              denied="the group record is saved by a maintainer, such as $rep. Your edits are kept and marked \`unsaved changes\` until then"
             elif [ "$COMMENTER" != "$AUTHOR" ]; then
               denied="only @$AUTHOR (the record's owner) or a maintainer can save this record"
             fi ;;
-          *) denied="saving needs write access to this repository; ask the Green DiSC representative" ;;
+          *) denied="saving needs write access to this repository; ask $rep" ;;
         esac
         if [ -n "${denied:-}" ]; then
           gh issue comment "$ISSUE" --body "Not saved: $denied."
@@ -164,3 +174,17 @@ runs:
         } > "$reply"
         gh issue comment "$ISSUE" --body-file "$reply"
         gh issue edit "$ISSUE" --remove-label "$unsaved"
+
+        # Tick this record's lines in open review check-ins, and close a
+        # check-in once all its tracked lines are ticked.
+        { gh issue list --label check-in --state open --limit 500 --json number,body || echo '[]'; } \
+          | jq -c --arg m "<!-- record:$ISSUE -->" '.[] | select(.body | contains($m))' \
+          | while read -r check_in; do
+              number=$(jq -r .number <<< "$check_in")
+              jq -r .body <<< "$check_in" > "$RUNNER_TEMP/check-in.md"
+              state=$(python "$script" tick --body-file "$RUNNER_TEMP/check-in.md" --issue "$ISSUE")
+              gh issue edit "$number" --body-file "$RUNNER_TEMP/check-in.md"
+              if [ "$state" = complete ]; then
+                gh issue close "$number" --reason completed --comment "Done: record #$ISSUE saved."
+              fi
+            done

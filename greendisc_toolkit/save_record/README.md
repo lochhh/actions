@@ -6,6 +6,7 @@ This action saves Green DiSC *record issues* to CSV files. A record issue holds 
 - **When someone comments exactly `/save`** (other comments, like `/saved it`, are ignored), the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary (including how many values are `unknown`) and removes the `unsaved changes` label. The issue stays open, so it can be updated later.
 - **When a record's body is edited**, the action adds the `unsaved changes` label, so edits that were never saved are easy to find (`label:"unsaved changes"`).
 - **A personal record can be saved by its owner (with write access) or a maintainer/admin; the group record, which anyone with write access can edit, only by a maintainer/admin.** The action checks the commenter's role, since the workflow's `author_association` filter also lets read-only organisation members through; anyone else gets a reply explaining why nothing was saved.
+- **After a successful save**, the action ticks the record's lines in open review check-ins (issues labelled `check-in`, created by [`review_cycle`](../review_cycle/README.md)), and closes a check-in once all its tracked lines are ticked.
 - **If any row is invalid**, nothing is written: the reply lists each problem by section, row and column, and the `unsaved changes` label stays.
 
 Blank cells are saved as `unknown`, so missing data stays visible. Missing or reordered columns are fine; unrecognised columns are ignored with a warning. Each CSV has a `record` column with the issue number, which is how a later `/save` finds the rows to replace; edits made directly to the CSV are overwritten by the next `/save` of that issue.
@@ -19,6 +20,7 @@ Issue content is untrusted: it reaches the script only through environment varia
 | Input | Default | Description |
 |---|---|---|
 | `data-dir` | `data` | Directory for the CSV files |
+| `config` | `config.yml` | File whose `representative` (`name`, `contact`) is named in replies; optional |
 | `token` | `github.token` | Token with `contents: write` and `issues: write` |
 
 ## Examples of usage

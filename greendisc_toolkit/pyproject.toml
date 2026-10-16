@@ -9,7 +9,7 @@ dependencies = []
 dev = ["pytest", "ruff", "pyyaml"]
 
 [tool.pytest.ini_options]
-pythonpath = ["sync_criteria", "save_record"]
+pythonpath = ["sync_criteria", "save_record", "review_cycle"]
 testpaths = ["tests"]
 
 [tool.ruff.lint]

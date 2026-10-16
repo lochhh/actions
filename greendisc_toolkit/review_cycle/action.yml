@@ -1,0 +1,59 @@
+name: 'Green DiSC: start review cycle'
+description: 'Start a Green DiSC review cycle: a milestone, one issue per criterion linked to the last cycle, and a check-in per record owner. Closes the previous cycle.'
+
+inputs:
+  due:
+    description: 'Review date, as YYYY-MM-DD. Becomes the milestone due date.'
+    required: true
+  name:
+    description: 'Cycle name. Defaults to "Review <year>-<month>" of the due date.'
+    required: false
+    default: ''
+  config:
+    description: 'Path of config.yml (representative and tiers).'
+    required: false
+    default: 'config.yml'
+  criteria:
+    description: 'Path of criteria.yml.'
+    required: false
+    default: 'criteria.yml'
+  token:
+    description: 'Token with issues: write.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.13'
+
+    # Inputs reach the script only through env, never the shell code.
+    - name: Start review cycle
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        ACTOR: ${{ github.actor }}
+        DUE: ${{ inputs.due }}
+        NAME: ${{ inputs.name }}
+        CONFIG: ${{ inputs.config }}
+        CRITERIA: ${{ inputs.criteria }}
+      run: |
+        # Anyone with write access can run a workflow; only maintainers and
+        # admins (e.g. the representative) may start a review.
+        role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ACTOR/permission" -q .role_name || echo none)
+        case "$role" in
+          admin|maintain) ;;
+          *) echo "::error::Only people with the Maintain or Admin role can start a review (you have '${role:-none}')."; exit 1 ;;
+        esac
+        if [ ! -f "$CRITERIA" ]; then
+          echo "::error::$CRITERIA not found. Run the criteria sync and merge its pull request first."
+          exit 1
+        fi
+        # yq is preinstalled on GitHub-hosted runners; the script stays stdlib-only.
+        yq -o=json '.' "$CONFIG" > "$RUNNER_TEMP/config.json"
+        yq -o=json '.' "$CRITERIA" > "$RUNNER_TEMP/criteria.json"
+        python "$GITHUB_ACTION_PATH/review_cycle.py" \
+          --config "$RUNNER_TEMP/config.json" --criteria "$RUNNER_TEMP/criteria.json" \
+          --due "$DUE" --name "$NAME"
