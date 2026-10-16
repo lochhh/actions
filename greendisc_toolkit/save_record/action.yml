@@ -96,7 +96,7 @@ runs:
         fi
         if [ "$ACTION" = opened ]; then
           gh issue edit "$ISSUE" --add-label "$unsaved"
-          gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\` to save it. Keep this issue open: to update it later, edit it and comment \`/save\` again."
+          gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\`: I'll check every row and copy the tables into \`$DATA_DIR/\`, which the Green DiSC evidence is built from. Editing the issue alone doesn't update it. Keep this issue open: to update it later, edit it and comment \`/save\` again."
           exit 0
         fi
 
