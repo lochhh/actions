@@ -243,11 +243,16 @@ def check_in_body(
             f"to date, then comment `/save` on it. {record_marker(record)}"
         )
     if group:
+        saved_by = (
+            "Members can add their own rows too."
+            if is_rep
+            else f"Your Green DiSC representative, {rep['name']} ({rep['contact']}), "
+            "checks and saves it."
+        )
         lines.append(
             f"- [ ] The group record #{group}: add anything the group did since "
             "the last review (training, shared material, promotion, group "
-            f"cleanups). Your Green DiSC representative, {rep['name']} "
-            f"({rep['contact']}), checks and saves it."
+            f"cleanups). {saved_by}"
         )
         if is_rep:
             lines.append(

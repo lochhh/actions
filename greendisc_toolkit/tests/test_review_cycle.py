@@ -92,3 +92,8 @@ def test_previous_issue_skips_current_milestone():
     ]
     assert rc.previous_issue(issues, 2) == 5
     assert rc.previous_issue([], 2) is None
+
+
+def test_rep_check_in_doesnt_refer_to_self():
+    """Only members' check-ins name the representative."""
+    assert "Jane Doe" not in rc.check_in_body("R", DUE, REP, 8, 9, is_rep=True)
