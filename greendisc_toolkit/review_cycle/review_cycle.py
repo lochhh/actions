@@ -11,6 +11,7 @@ cycle's milestone is left alone.
 """
 
 import argparse
+import csv
 import datetime
 import json
 import os
@@ -189,6 +190,32 @@ def form_body(form: dict) -> str:
     )
 
 
+def orphaned_rows(data_dir: Path, records: set[int]) -> dict[int, list[str]]:
+    """Find saved rows whose record no longer exists.
+
+    Parameters
+    ----------
+    data_dir
+        Directory with the CSV files written by ``save_record``.
+    records
+        Numbers of every record issue, open or closed.
+
+    Returns
+    -------
+    dict of int to list of str
+        Missing record number to the CSV files (paths as ``<data_dir>/<name>``)
+        that still have its rows.
+
+    """
+    found: dict[int, list[str]] = {}
+    for path in sorted(data_dir.glob("*.csv")):
+        with path.open(newline="", encoding="utf-8") as f:
+            numbers = {int(r["record"]) for r in csv.DictReader(f) if r.get("record")}
+        for n in sorted(numbers - records):
+            found.setdefault(n, []).append(f"{data_dir.as_posix()}/{path.name}")
+    return found
+
+
 def check_in_body(
     cycle: str,
     due: datetime.date,
@@ -198,6 +225,7 @@ def check_in_body(
     repo: str,
     criteria_links: str,
     criteria_pr: str = "",
+    orphans: dict[int, list[str]] | None = None,
 ) -> str:
     """Return the body of a member's check-in.
 
@@ -224,6 +252,8 @@ def check_in_body(
         Markdown links to the upstream criteria text.
     criteria_pr
         Number of an open criteria sync pull request, if any.
+    orphans
+        Saved rows whose record no longer exists (see `orphaned_rows`).
 
     Returns
     -------
@@ -265,6 +295,21 @@ def check_in_body(
             lines.append(
                 f"- [ ] #{criteria_pr}: Green DiSC's criteria changed; check the "
                 "upstream changes and merge it."
+            )
+        if orphans:
+            where = "; ".join(
+                f"#{n} ("
+                + ", ".join(f"[{Path(f).name}]({site}/blob/HEAD/{f})" for f in files)
+                + ")"
+                for n, files in sorted(orphans.items())
+            )
+            lines.append(
+                "- [ ] Saved rows belong to records that no longer exist: "
+                f"{where}. If that was intended, delete those rows (the ones "
+                "with that `record` number) from the files in `data/` on GitHub. "
+                "If not, add the items to their owner's record and `/save` it, "
+                "then delete the old rows. Editing these files by hand is fine "
+                "here, since no record will overwrite those rows."
             )
         lines += [
             (
@@ -366,6 +411,7 @@ def start_cycle(
     criteria_pr: str,
     personal_form: dict | None,
     group_form: dict | None,
+    data_dir: Path,
     summary: Path | None,
 ) -> None:
     """Create a review cycle on GitHub and close the previous one.
@@ -393,6 +439,9 @@ def start_cycle(
     group_form
         Parsed group record issue form, used if the repository has never had
         a group record; None to create none.
+    data_dir
+        Directory with the saved CSV files, checked for rows whose record no
+        longer exists.
     summary
         File to append a Markdown summary to (e.g. the job summary), if any.
 
@@ -503,6 +552,20 @@ def start_cycle(
         report.append(f"Created the group record, #{issue['number']}.")
     records = issues_with(repo, "labels=personal-record&state=open")
     groups = issues_with(repo, "labels=group-record&state=open")
+    # Rows saved from records that were since deleted (or unlabelled) would
+    # otherwise stay in the data forever: ask the representative about them.
+    every_record = {
+        i["number"]
+        for kind in ("personal-record", "group-record")
+        for i in issues_with(repo, f"labels={kind}&state=all")
+    }
+    orphans = orphaned_rows(data_dir, every_record)
+    if orphans:
+        report.append(
+            "Saved rows from records that no longer exist: "
+            + ", ".join(f"#{n}" for n in orphans)
+            + "."
+        )
     group = min((g["number"] for g in groups), default=None)
     owners = {}
     for r in sorted(records, key=lambda r: r["number"]):
@@ -529,6 +592,7 @@ def start_cycle(
                 repo,
                 criteria_links,
                 criteria_pr if login == actor else "",
+                orphans if login == actor else None,
             ),
             [CHECK_IN_LABEL],
             [login],
@@ -601,6 +665,7 @@ def main(argv: list[str] | None = None) -> None:
         "--personal-form", type=Path, help="personal record issue form as JSON"
     )
     p.add_argument("--group-form", type=Path, help="group record issue form as JSON")
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
     args = p.parse_args(argv)
     try:
         due = parse_due(args.due)
@@ -618,6 +683,7 @@ def main(argv: list[str] | None = None) -> None:
             json.loads(args.group_form.read_text(encoding="utf-8"))
             if args.group_form
             else None,
+            args.data_dir,
             Path(os.environ["GITHUB_STEP_SUMMARY"])
             if os.environ.get("GITHUB_STEP_SUMMARY")
             else None,

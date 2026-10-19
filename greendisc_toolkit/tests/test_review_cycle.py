@@ -114,3 +114,22 @@ def test_form_body_matches_issue_rendering():
     body = rc.form_body(form)
     assert body == "### Hardware\n\n| Type |\n\n### Pipelines\n\n| Name |"
     assert sr.record_kind(body) == "personal"
+
+
+def test_orphaned_rows(tmp_path):
+    """Rows from records that no longer exist are found, per file."""
+    (tmp_path / "hardware.csv").write_text("record,type\n8,laptop\n9,desk\n43,mouse\n")
+    (tmp_path / "pipelines.csv").write_text("record,name\n8,sorter\n")
+    found = rc.orphaned_rows(tmp_path, {9, 43})
+    data = tmp_path.as_posix()
+    assert found == {8: [f"{data}/hardware.csv", f"{data}/pipelines.csv"]}
+    assert rc.orphaned_rows(tmp_path / "missing", {1}) == {}
+
+
+def test_rep_check_in_lists_orphans():
+    """Only the rep is asked about rows from deleted records, and only if any."""
+    orphans = {8: ["data/hardware.csv"]}
+    rep = rc.check_in_body("R", DUE, 43, 9, True, "o/r", "[B](x)", "", orphans)
+    link = "[hardware.csv](https://github.com/o/r/blob/HEAD/data/hardware.csv)"
+    assert f"no longer exist: #8 ({link})" in rep
+    assert "no longer exist" not in body(True)
