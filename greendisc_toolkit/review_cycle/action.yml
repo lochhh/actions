@@ -17,6 +17,14 @@ inputs:
     description: 'Path of config.yml (tiers).'
     required: false
     default: 'config.yml'
+  personal-form:
+    description: 'Issue form whose tables become the body of personal records created for members without one. Leave empty to create none.'
+    required: false
+    default: '.github/ISSUE_TEMPLATE/personal-record.yml'
+  group-form:
+    description: 'Issue form whose tables become the body of the group record, if the repository has never had one. Leave empty to create none.'
+    required: false
+    default: '.github/ISSUE_TEMPLATE/group-record.yml'
   criteria:
     description: 'Path of criteria.yml.'
     required: false
@@ -43,6 +51,8 @@ runs:
         CRITERIA_PR: ${{ inputs.criteria-pr }}
         CONFIG: ${{ inputs.config }}
         CRITERIA: ${{ inputs.criteria }}
+        PERSONAL_FORM: ${{ inputs.personal-form }}
+        GROUP_FORM: ${{ inputs.group-form }}
       run: |
         # Anyone with write access can run a workflow; only maintainers and
         # admins (e.g. the representative) may start a review.
@@ -58,6 +68,15 @@ runs:
         # yq is preinstalled on GitHub-hosted runners; the script stays stdlib-only.
         yq -o=json '.' "$CONFIG" > "$RUNNER_TEMP/config.json"
         yq -o=json '.' "$CRITERIA" > "$RUNNER_TEMP/criteria.json"
+        form_args=()
+        if [ -n "$PERSONAL_FORM" ] && [ -f "$PERSONAL_FORM" ]; then
+          yq -o=json '.' "$PERSONAL_FORM" > "$RUNNER_TEMP/personal-form.json"
+          form_args=(--personal-form "$RUNNER_TEMP/personal-form.json")
+        fi
+        if [ -n "$GROUP_FORM" ] && [ -f "$GROUP_FORM" ]; then
+          yq -o=json '.' "$GROUP_FORM" > "$RUNNER_TEMP/group-form.json"
+          form_args+=(--group-form "$RUNNER_TEMP/group-form.json")
+        fi
         python "$GITHUB_ACTION_PATH/review_cycle.py" \
           --config "$RUNNER_TEMP/config.json" --criteria "$RUNNER_TEMP/criteria.json" \
-          --due "$DUE" --name "$NAME" --criteria-pr "$CRITERIA_PR"
+          --due "$DUE" --name "$NAME" --criteria-pr "$CRITERIA_PR" "${form_args[@]}"

@@ -30,6 +30,7 @@ runs:
         LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
         ISSUE: ${{ github.event.issue.number }}
         AUTHOR: ${{ github.event.issue.user.login }}
+        ASSIGNEE: ${{ github.event.issue.assignees[0].login }}
         BODY: ${{ github.event.issue.body }}
         BRANCH: ${{ github.event.repository.default_branch }}
         COMMENT: ${{ github.event.comment.body }}
@@ -64,9 +65,15 @@ runs:
 
         # One record per person (personal) or per repository (group): only the
         # oldest labelled one counts.
-        author_filter=()
-        if [ "$kind" = personal ]; then author_filter=(--author "$AUTHOR"); fi
-        older=$(gh issue list --label "$label" "${author_filter[@]}" --state all           --json number -q ".[] | select(.number < $ISSUE) | .number" | sort -n | head -n 1)
+        # A record's owner is its assignee (records created by a review are
+        # assigned to their owner), or else whoever created it.
+        owner="${ASSIGNEE:-$AUTHOR}"
+        owner_of='(.assignees[0].login // .author.login)'
+        filter='.[] | select(.number < $n)'
+        if [ "$kind" = personal ]; then filter+=" | select($owner_of == \$o)"; fi
+        older=$(gh issue list --label "$label" --state all --limit 500 \
+          --json number,author,assignees \
+          | jq -r --argjson n "$ISSUE" --arg o "$owner" "$filter | .number" | sort -n | head -n 1)
 
         if [ "$ACTION" = edited ]; then
           # Only edits to the record itself count, not to duplicates or to
@@ -94,8 +101,8 @@ runs:
           write)
             if [ "$kind" = group ]; then
               denied="the Green DiSC representative reviews and saves the group record. Your edits are kept and marked \`unsaved changes\` until then"
-            elif [ "$COMMENTER" != "$AUTHOR" ]; then
-              denied="only @$AUTHOR (the record's owner) or the Green DiSC representative can save this record"
+            elif [ "$COMMENTER" != "$owner" ]; then
+              denied="only @$owner (the record's owner) or the Green DiSC representative can save this record"
             fi ;;
           *) denied="saving needs write access to this repository; ask the Green DiSC representative" ;;
         esac

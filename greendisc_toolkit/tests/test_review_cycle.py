@@ -72,5 +72,45 @@ def test_rep_check_in_stays_open():
     """Saving both records ticks the rep's lines but leaves it open."""
     text, complete = sr.tick_check_in(body(True), 8)
     text, complete = sr.tick_check_in(text, 9)
-    assert "- [x] #8" in text and "- [x] #9" in text and not complete
+    assert "- [x] Update your personal record" in text
+    assert "- [x] Update the group record" in text and not complete
     assert "[Bronze](https://x)" in text
+
+
+def test_members_are_writers_and_maintainers():
+    """Admins and bots don't get a record; whoever starts the review does."""
+    collaborators = [
+        {"login": "amy", "role_name": "write", "type": "User"},
+        {"login": "rep", "role_name": "maintain", "type": "User"},
+        {"login": "boss", "role_name": "admin", "type": "User"},
+        {"login": "reader", "role_name": "read", "type": "User"},
+        {"login": "ci", "role_name": "write", "type": "Bot"},
+    ]
+    assert rc.members(collaborators, "boss") == ["amy", "boss", "rep"]
+
+
+def test_record_owner_is_assignee_else_author():
+    """A record created by a review belongs to its assignee."""
+    issue = {"user": {"login": "bot"}, "assignees": [{"login": "amy"}]}
+    assert rc.record_owner(issue) == "amy"
+    assert rc.record_owner({"user": {"login": "amy"}, "assignees": []}) == "amy"
+
+
+def test_form_body_matches_issue_rendering():
+    """Textareas become ### sections with their pre-filled value."""
+    form = {
+        "body": [
+            {"type": "markdown", "attributes": {"value": "intro"}},
+            {
+                "type": "textarea",
+                "attributes": {"label": "Hardware", "value": "| Type |\n"},
+            },
+            {
+                "type": "textarea",
+                "attributes": {"label": "Pipelines", "value": "| Name |\n"},
+            },
+        ]
+    }
+    body = rc.form_body(form)
+    assert body == "### Hardware\n\n| Type |\n\n### Pipelines\n\n| Name |"
+    assert sr.record_kind(body) == "personal"

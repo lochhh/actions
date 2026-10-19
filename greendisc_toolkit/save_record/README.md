@@ -2,6 +2,7 @@
 
 This action saves Green DiSC *record issues* to CSV files. A record issue holds one Markdown table per section (personal records: Hardware, Data resources, Data cleaning, Pipelines; the group record: Compute infrastructure, Training, Sharing and promotion), created from the toolkit's record issue form.
 
+- **A personal record belongs to its assignee** (records created by [`review_cycle`](../review_cycle/README.md) are assigned to their owner), or else to whoever created it.
 - **Each person can have one personal record, and the repository one group record.** Only the oldest counts: `/save` on a second one replies with a link to the first. The record's label (`personal-record` or `group-record`) is added on its first save; the toolkit's issue forms also add it when the label already exists.
 - **When someone comments exactly `/save`** (other comments, like `/saved it`, are ignored), the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary and removes the `unsaved changes` label. The issue stays open, so it can be updated later.
 - **When a record's body is edited**, the action adds the `unsaved changes` label, so edits that were never saved are easy to find (`label:"unsaved changes"`).
@@ -38,9 +39,9 @@ jobs:
     # Issues only (not PRs); a cheap first filter, the action checks roles.
     if: >-
       !github.event.issue.pull_request &&
-      (github.event_name == 'issues' || startsWith(github.event.comment.body, '/save')) &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
-        github.event_name == 'issues' && github.event.issue.author_association || github.event.comment.author_association)
+      (github.event_name == 'issues' ||
+        (startsWith(github.event.comment.body, '/save') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)))
     runs-on: ubuntu-latest
     permissions:
       contents: write

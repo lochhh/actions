@@ -124,6 +124,71 @@ def criteria_for(criteria: dict, tiers: list[str]) -> list[dict]:
     ]
 
 
+def record_owner(issue: dict) -> str:
+    """Return a record's owner: its assignee, or else whoever created it.
+
+    Parameters
+    ----------
+    issue
+        Record issue from the GitHub API.
+
+    Returns
+    -------
+    str
+        GitHub username.
+
+    """
+    assignees = issue.get("assignees") or []
+    return assignees[0]["login"] if assignees else issue["user"]["login"]
+
+
+def members(collaborators: list[dict], actor: str) -> list[str]:
+    """Return who should have a personal record.
+
+    Parameters
+    ----------
+    collaborators
+        Repository collaborators from the GitHub API, with ``role_name``.
+    actor
+        Who started the review; always included.
+
+    Returns
+    -------
+    list of str
+        GitHub usernames of people with the Write or Maintain role, and
+        `actor`. Admins are left out: in an organisation they are often owners
+        who aren't in the group. Bots are left out too.
+
+    """
+    logins = [
+        c["login"]
+        for c in collaborators
+        if c.get("role_name") in {"write", "maintain"} and c.get("type") != "Bot"
+    ]
+    return sorted(set(logins) | {actor})
+
+
+def form_body(form: dict) -> str:
+    """Render an issue form's pre-filled fields as GitHub renders an issue body.
+
+    Parameters
+    ----------
+    form
+        Parsed issue form.
+
+    Returns
+    -------
+    str
+        One ``### <label>`` section per textarea, with its pre-filled value.
+
+    """
+    return "\n\n".join(
+        f"### {b['attributes']['label']}\n\n{b['attributes'].get('value', '').strip()}"
+        for b in form.get("body", [])
+        if b.get("type") == "textarea"
+    )
+
+
 def check_in_body(
     cycle: str,
     due: datetime.date,
@@ -174,19 +239,18 @@ def check_in_body(
         ),
         "",
     ]
-    # GitHub shows "#N" as the issue's title, so record lines start with it.
     if record:
         lines.append(
-            f"- [ ] #{record}: check everything is up to date, then comment "
+            f"- [ ] Update your personal record (#{record}), then comment "
             f"`/save` on it. {record_marker(record)}"
         )
     if group and is_rep:
         lines.append(
-            f"- [ ] #{group}: check everything is up to date and review members' "
+            f"- [ ] Update the group record (#{group}) and review members' "
             f"changes, then comment `/save` on it. {record_marker(group)}"
         )
     elif group:
-        lines.append(f"- [ ] #{group}: check everything is up to date.")
+        lines.append(f"- [ ] Update the group record (#{group}).")
     guides = f"- [ ] [Guides]({site}/tree/HEAD/guides): "
     if is_rep:
         lines += [
@@ -300,6 +364,8 @@ def start_cycle(
     name: str,
     actor: str,
     criteria_pr: str,
+    personal_form: dict | None,
+    group_form: dict | None,
     summary: Path | None,
 ) -> None:
     """Create a review cycle on GitHub and close the previous one.
@@ -321,6 +387,12 @@ def start_cycle(
         the group record, the guides, the README and the meeting.
     criteria_pr
         Number of an open criteria sync pull request, or blank.
+    personal_form
+        Parsed personal record issue form, used as the body of records
+        created for members who don't have one; None to create none.
+    group_form
+        Parsed group record issue form, used if the repository has never had
+        a group record; None to create none.
     summary
         File to append a Markdown summary to (e.g. the job summary), if any.
 
@@ -378,12 +450,63 @@ def start_cycle(
     # One check-in per record owner; the representative's also covers saving
     # the group record.
     gh("label", "create", CHECK_IN_LABEL, "--color", "C5DEF5", "--force")
+    # Everyone with access gets a personal record once; one that was closed
+    # (someone who left, or doesn't need one) is never recreated.
+    if personal_form:
+        gh("label", "create", "personal-record", "--color", "2E7D32", "--force")
+        owned = {
+            record_owner(r)
+            for r in issues_with(repo, "labels=personal-record&state=all")
+        }
+        people = members(
+            api_list(f"repos/{repo}/collaborators?affiliation=all&per_page=100"),
+            actor,
+        )
+        created = []
+        for login in people:
+            if login in owned:
+                continue
+            issue = json.loads(
+                gh(
+                    "api",
+                    f"repos/{repo}/issues",
+                    "-X",
+                    "POST",
+                    data={
+                        "title": f"Green DiSC personal record: {login}",
+                        "body": form_body(personal_form),
+                        "labels": ["personal-record"],
+                        "assignees": [login],
+                    },
+                )
+            )
+            created.append(f"#{issue['number']} ({login})")
+        if created:
+            report.append(f"Created personal records: {', '.join(created)}.")
+    # The group record too, once, assigned to the representative.
+    if group_form and not issues_with(repo, "labels=group-record&state=all"):
+        gh("label", "create", "group-record", "--color", "2E7D32", "--force")
+        issue = json.loads(
+            gh(
+                "api",
+                f"repos/{repo}/issues",
+                "-X",
+                "POST",
+                data={
+                    "title": "Green DiSC group record",
+                    "body": form_body(group_form),
+                    "labels": ["group-record"],
+                    "assignees": [actor],
+                },
+            )
+        )
+        report.append(f"Created the group record, #{issue['number']}.")
     records = issues_with(repo, "labels=personal-record&state=open")
     groups = issues_with(repo, "labels=group-record&state=open")
     group = min((g["number"] for g in groups), default=None)
     owners = {}
     for r in sorted(records, key=lambda r: r["number"]):
-        owners.setdefault(r["user"]["login"], r["number"])
+        owners.setdefault(record_owner(r), r["number"])
     owners.setdefault(actor, None)
     existing = {
         a["login"]
@@ -396,7 +519,7 @@ def start_cycle(
         if login in existing:
             continue
         create(
-            f"{cycle}: update your Green DiSC records",
+            f"{cycle} check-in: {login}",
             check_in_body(
                 cycle,
                 due,
@@ -412,8 +535,6 @@ def start_cycle(
         )
         created += 1
     report.append(f"Created {created} check-in(s).")
-    if group is None:
-        report.append("No group record yet: create one from **Issues → New issue**.")
 
     unsaved = [
         f"#{i['number']}"
@@ -476,6 +597,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--due", required=True)
     p.add_argument("--name", default="")
     p.add_argument("--criteria-pr", default="")
+    p.add_argument(
+        "--personal-form", type=Path, help="personal record issue form as JSON"
+    )
+    p.add_argument("--group-form", type=Path, help="group record issue form as JSON")
     args = p.parse_args(argv)
     try:
         due = parse_due(args.due)
@@ -487,6 +612,12 @@ def main(argv: list[str] | None = None) -> None:
             args.name,
             os.environ["GITHUB_ACTOR"],
             args.criteria_pr.strip(),
+            json.loads(args.personal_form.read_text(encoding="utf-8"))
+            if args.personal_form
+            else None,
+            json.loads(args.group_form.read_text(encoding="utf-8"))
+            if args.group_form
+            else None,
             Path(os.environ["GITHUB_STEP_SUMMARY"])
             if os.environ.get("GITHUB_STEP_SUMMARY")
             else None,
