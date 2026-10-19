@@ -139,7 +139,7 @@ def test_save_replaces_only_this_issues_rows(tmp_path):
         ("3", "tablet", "unknown"),
         ("5", "laptop", "disposed"),
     ]
-    assert "1 row(s)" in message and "7 unknown value(s)" in message
+    assert "1 row(s)" in message and "unknown" not in message
 
 
 def test_invalid_record_writes_nothing(tmp_path):
@@ -212,11 +212,13 @@ def test_sections_saved_to_own_files(tmp_path):
     assert message.count("1 row(s)") == 4
 
 
-def test_kind_from_unique_heading():
-    """Data cleaning is in both kinds, so it doesn't identify a record alone."""
-    assert sr.record_kind("### Data cleaning\r\n\r\n| Date |") is None
-    assert sr.record_kind("### Training\r\n\r\n### Data cleaning\r\n") == "group"
-    assert sr.record_kind("### Pipelines\r\n\r\n### Data cleaning\r\n") == "personal"
+def test_kind_from_heading():
+    """A record's kind comes from its section headings."""
+    assert sr.record_kind("### Data cleaning\r\n\r\n| Date |") == "personal"
+    assert (
+        sr.record_kind("### Training\r\n\r\n### Compute infrastructure\r\n") == "group"
+    )
+    assert sr.record_kind("### Notes\r\n\r\nhi") is None
 
 
 def test_blank_notes_stay_blank(tmp_path):
@@ -241,16 +243,40 @@ def test_count_must_be_whole_number(value):
 
 
 def test_group_record_saved(tmp_path):
-    """A group record saves its own sections, including shared Data cleaning."""
+    """A group record saves its own sections only."""
     text = (
+        "### Compute infrastructure\n\n| System | Site | PUE |\n|---|---|---|\n"
+        "| Cluster | Off-site | ~1.3 |\n\n"
         "### Training\n\n| Date | Title | Attendees |\n|---|---|---|\n"
         "| 2026-10-01 | Green coding | ~25 |\n\n"
         "### Sharing and promotion\n\n| Date | Kind | People reached |\n"
-        "|---|---|---|\n| 2026-10-02 | Promotion | 40 |\n\n"
-        "### Data cleaning\n\n| Date | Freed |\n|---|---|\n| 2026-09-30 | 2 TB |\n"
+        "|---|---|---|\n| 2026-10-02 | Promotion | 40 |\n"
     )
     sr.save(text, 9, tmp_path)
+    assert read(tmp_path / "compute.csv")[0]["site"] == "off-site"
     assert read(tmp_path / "training.csv")[0]["attendees"] == "~25"
     assert read(tmp_path / "sharing.csv")[0]["kind"] == "promotion"
-    assert read(tmp_path / "data-cleaning.csv")[0]["record"] == "9"
     assert not (tmp_path / "hardware.csv").exists()
+    assert not (tmp_path / "data-cleaning.csv").exists()
+
+
+def test_tick_check_in_closes_when_tracked_lines_done():
+    """Saving a record ticks its lines; reminders without a marker don't count."""
+    body = (
+        "Intro\n"
+        "- [ ] Your record #8 <!-- record:8 -->\n"
+        "- [ ] The group record #9: add rows\n"
+        "- [ ] Save the group record #9 <!-- record:9 -->\n"
+    )
+    body, complete = sr.tick_check_in(body, 8)
+    assert "- [x] Your record #8" in body and not complete
+    body, complete = sr.tick_check_in(body, 9)
+    assert "- [x] Save the group record" in body and complete
+    assert "- [ ] The group record #9: add rows" in body
+
+
+@pytest.mark.parametrize("value", ["n/a", "N/A", "na", "-"])
+def test_not_applicable_in_any_column(value):
+    """n/a is allowed in every column and kept apart from unknown."""
+    for spec in (None, sr.LOWER, sr.YEAR, sr.SIZE, sr.DATE, sr.COUNT, ["in use"]):
+        assert sr.validate(value, spec, 2030) == "n/a"

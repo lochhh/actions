@@ -1,14 +1,15 @@
 # Save Green DiSC records
 
-This action saves Green DiSC *record issues* to CSV files. A record issue holds one Markdown table per section (personal records: Hardware, Data resources, Data cleaning, Pipelines; the group record: Training, Sharing and promotion, Data cleaning), created from the toolkit's record issue form.
+This action saves Green DiSC *record issues* to CSV files. A record issue holds one Markdown table per section (personal records: Hardware, Data resources, Data cleaning, Pipelines; the group record: Compute infrastructure, Training, Sharing and promotion), created from the toolkit's record issue form.
 
-- **When a record issue is opened**, the action labels it (`personal-record` or `group-record`, and `unsaved changes`) and replies with how to save it. Each person can have one personal record, and the repository one group record: a second one is closed with a link to the first.
-- **When someone comments exactly `/save`** (other comments, like `/saved it`, are ignored), the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary (including how many values are `unknown`) and removes the `unsaved changes` label. The issue stays open, so it can be updated later.
+- **Each person can have one personal record, and the repository one group record.** Only the oldest counts: `/save` on a second one replies with a link to the first. The record's label (`personal-record` or `group-record`) is added on its first save; the toolkit's issue forms also add it when the label already exists.
+- **When someone comments exactly `/save`** (other comments, like `/saved it`, are ignored), the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary and removes the `unsaved changes` label. The issue stays open, so it can be updated later.
 - **When a record's body is edited**, the action adds the `unsaved changes` label, so edits that were never saved are easy to find (`label:"unsaved changes"`).
 - **A personal record can be saved by its owner (with write access) or a maintainer/admin; the group record, which anyone with write access can edit, only by a maintainer/admin.** The action checks the commenter's role, since the workflow's `author_association` filter also lets read-only organisation members through; anyone else gets a reply explaining why nothing was saved.
+- **After a successful save**, the action ticks the record's lines in open review check-ins (issues labelled `check-in`, created by [`review_cycle`](../review_cycle/README.md)), and closes a check-in once all its tracked lines are ticked.
 - **If any row is invalid**, nothing is written: the reply lists each problem by section, row and column, and the `unsaved changes` label stays.
 
-Blank cells are saved as `unknown`, so missing data stays visible. Missing or reordered columns are fine; unrecognised columns are ignored with a warning. Each CSV has a `record` column with the issue number, which is how a later `/save` finds the rows to replace; edits made directly to the CSV are overwritten by the next `/save` of that issue.
+Blank cells are saved as `unknown`, so missing data stays visible; `n/a` (or `na`, `-`) marks a cell that doesn't apply. Missing or reordered columns are fine; unrecognised columns are ignored with a warning. Each CSV has a `record` column with the issue number, which is how a later `/save` finds the rows to replace; edits made directly to the CSV are overwritten by the next `/save` of that issue.
 
 If another save lands at the same time, the push is retried on the latest branch (up to 5 times), so concurrent saves don't conflict.
 
@@ -28,7 +29,7 @@ The calling workflow decides who may trigger it. The Green DiSC toolkit template
 ```yaml
 on:
   issues:
-    types: [opened, edited]
+    types: [edited]
   issue_comment:
     types: [created]
 

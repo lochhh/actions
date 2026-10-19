@@ -1,5 +1,5 @@
 name: 'Green DiSC: save record'
-description: 'Save a Green DiSC record issue (Markdown tables) to CSV files on `/save`, welcome new records and flag unsaved edits.'
+description: 'Save a Green DiSC record issue (Markdown tables) to CSV files on `/save`, and flag unsaved edits.'
 
 inputs:
   data-dir:
@@ -30,7 +30,6 @@ runs:
         LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
         ISSUE: ${{ github.event.issue.number }}
         AUTHOR: ${{ github.event.issue.user.login }}
-        STATE: ${{ github.event.issue.state }}
         BODY: ${{ github.event.issue.body }}
         BRANCH: ${{ github.event.repository.default_branch }}
         COMMENT: ${{ github.event.comment.body }}
@@ -62,56 +61,41 @@ runs:
         # Templates don't copy labels, so make sure ours exist.
         gh label create "$label" --color 2E7D32 --description "Green DiSC $kind record" --force > /dev/null
         gh label create "$unsaved" --color FBCA04 --description "Green DiSC record edited since its last /save" --force > /dev/null
-        # Only edits to issues already labelled as records count (not ones
-        # that merely look like a record).
-        if [ "$ACTION" = edited ] && ! jq -e --arg l "$label" 'index($l)' <<< "$LABELS" > /dev/null; then
-          echo "Not a labelled record; nothing to do."
-          exit 0
-        fi
 
         # One record per person (personal) or per repository (group): only the
-        # oldest counts, on open and on /save.
-        if [ "$ACTION" = opened ]; then
-          gh issue edit "$ISSUE" --add-label "$label"
-        fi
+        # oldest labelled one counts.
         author_filter=()
         if [ "$kind" = personal ]; then author_filter=(--author "$AUTHOR"); fi
-        older=$(gh issue list --label "$label" "${author_filter[@]}" --state all \
-          --json number -q ".[] | select(.number < $ISSUE) | .number" | sort -n | head -n 1)
-        if [ -n "$older" ]; then
-          if [ "$ACTION" = edited ]; then
+        older=$(gh issue list --label "$label" "${author_filter[@]}" --state all           --json number -q ".[] | select(.number < $ISSUE) | .number" | sort -n | head -n 1)
+
+        if [ "$ACTION" = edited ]; then
+          # Only edits to the record itself count, not to duplicates or to
+          # issues that merely look like a record.
+          if [ -n "$older" ] || ! jq -e --arg l "$label" 'index($l)' <<< "$LABELS" > /dev/null; then
+            echo "Not a saved record; nothing to do."
             exit 0
-          elif [ "$STATE" = open ]; then
-            gh issue close "$ISSUE" --reason "not planned" \
-              --comment "There is already a $kind record: #$older. Please edit that one instead."
-          else
-            gh issue comment "$ISSUE" --body "Not saved: the $kind record is #$older. Please edit that one instead."
           fi
+          gh issue edit "$ISSUE" --add-label "$unsaved"
           exit 0
         fi
 
-        if [ "$ACTION" = edited ]; then
-          gh issue edit "$ISSUE" --add-label "$unsaved"
-          exit 0
-        fi
-        if [ "$ACTION" = opened ]; then
-          gh issue edit "$ISSUE" --add-label "$unsaved"
-          gh issue comment "$ISSUE" --body "When this record is complete, comment \`/save\`: I'll check every row and copy the tables into \`$DATA_DIR/\`, which the Green DiSC evidence is built from. Editing the issue alone doesn't update it. Keep this issue open: to update it later, edit it and comment \`/save\` again."
+        if [ -n "$older" ]; then
+          gh issue comment "$ISSUE" --body "Not saved: the $kind record is #$older. Please edit that one instead."
           exit 0
         fi
 
         # author_association lets read-only members through, so check the
         # commenter's actual role: owners with write access can save their own
         # personal record; the group record and other people's records need
-        # maintain or admin (e.g. the representative), who checks them first.
+        # maintain or admin (the representative), who checks them first.
         role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$COMMENTER/permission" -q .role_name || echo none)
         case "$role" in
           admin|maintain) ;;
           write)
             if [ "$kind" = group ]; then
-              denied="the group record is saved by a maintainer, such as the Green DiSC representative. Your edits are kept and marked \`unsaved changes\` until then"
+              denied="the Green DiSC representative reviews and saves the group record. Your edits are kept and marked \`unsaved changes\` until then"
             elif [ "$COMMENTER" != "$AUTHOR" ]; then
-              denied="only @$AUTHOR (the record's owner) or a maintainer can save this record"
+              denied="only @$AUTHOR (the record's owner) or the Green DiSC representative can save this record"
             fi ;;
           *) denied="saving needs write access to this repository; ask the Green DiSC representative" ;;
         esac
@@ -119,6 +103,7 @@ runs:
           gh issue comment "$ISSUE" --body "Not saved: $denied."
           exit 0
         fi
+        gh issue edit "$ISSUE" --add-label "$label" > /dev/null
 
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -164,3 +149,17 @@ runs:
         } > "$reply"
         gh issue comment "$ISSUE" --body-file "$reply"
         gh issue edit "$ISSUE" --remove-label "$unsaved"
+
+        # Tick this record's lines in open review check-ins, and close a
+        # check-in once all its tracked lines are ticked.
+        { gh issue list --label check-in --state open --limit 500 --json number,body || echo '[]'; } \
+          | jq -c --arg m "<!-- record:$ISSUE -->" '.[] | select(.body | contains($m))' \
+          | while read -r check_in; do
+              number=$(jq -r .number <<< "$check_in")
+              jq -r .body <<< "$check_in" > "$RUNNER_TEMP/check-in.md"
+              state=$(python "$script" tick --body-file "$RUNNER_TEMP/check-in.md" --issue "$ISSUE")
+              gh issue edit "$number" --body-file "$RUNNER_TEMP/check-in.md"
+              if [ "$state" = complete ]; then
+                gh issue close "$number" --reason completed --comment "Done: record #$ISSUE saved."
+              fi
+            done

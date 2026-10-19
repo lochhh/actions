@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 UNKNOWN = "unknown"
+NOT_APPLICABLE = "n/a"
 YEAR = "year"
 LOWER = "lower"
 SIZE = "size"
@@ -78,6 +79,21 @@ SECTIONS = {
             "Notes": OPTIONAL,
         },
     },
+    "Compute infrastructure": {
+        "file": "compute.csv",
+        "columns": {
+            "System": None,
+            "Site": ["on-site", "off-site"],
+            "Provider": None,
+            "Region": None,
+            "PUE": None,
+            "Electricity": None,
+            "Hardware": None,
+            "Reason": None,
+            "Status": ["in use", "retired"],
+            "Notes": OPTIONAL,
+        },
+    },
     "Training": {
         "file": "training.csv",
         "columns": {
@@ -114,12 +130,11 @@ SECTIONS = {
         },
     },
 }
-# Record kind -> its sections. A section may belong to several kinds (the group
-# record will also have Data cleaning); a kind is recognised by a heading that
-# no other kind has.
+# Record kind -> its sections. A kind is recognised by a heading that no other
+# kind has, so kinds could share a section.
 RECORD_KINDS = {
     "personal": ["Hardware", "Data resources", "Data cleaning", "Pipelines"],
-    "group": ["Training", "Sharing and promotion", "Data cleaning"],
+    "group": ["Compute infrastructure", "Training", "Sharing and promotion"],
 }
 
 
@@ -224,7 +239,8 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
     Returns
     -------
     str
-        The normalised value; blank becomes ``"unknown"`` unless `OPTIONAL`.
+        The normalised value; blank becomes ``"unknown"`` unless `OPTIONAL`,
+        and ``n/a``, ``na`` or ``-`` become ``"n/a"`` in any column.
 
     Raises
     ------
@@ -233,6 +249,8 @@ def validate(value: str, spec: list[str] | str | None, year_max: int) -> str:
 
     """
     value = " ".join(value.split())
+    if value.lower() in {"n/a", "na", "-"}:
+        return NOT_APPLICABLE
     if spec == OPTIONAL:
         return value
     if not value or value.lower() == UNKNOWN:
@@ -354,6 +372,39 @@ def write_csv(path: Path, issue: int, columns: list[str], rows: list[dict]) -> N
         writer.writerows(all_rows)
 
 
+def tick_check_in(body: str, record: int) -> tuple[str, bool]:
+    """Tick a record's lines in a review check-in.
+
+    Check-in lines the bot tracks end with ``<!-- record:N -->``; lines without
+    a marker are ticked by hand and don't block closing. A check-in containing
+    ``<!-- keep-open -->`` is never complete: its owner closes it.
+
+    Parameters
+    ----------
+    body
+        Check-in issue body.
+    record
+        Number of the record that was saved.
+
+    Returns
+    -------
+    body : str
+        Body with that record's lines ticked.
+    complete : bool
+        Whether every tracked line is now ticked.
+
+    """
+    marker = f"<!-- record:{record} -->"
+    lines = [
+        ln.replace("- [ ]", "- [x]", 1) if marker in ln else ln
+        for ln in body.splitlines()
+    ]
+    complete = "<!-- keep-open -->" not in body and not any(
+        re.match(r"\s*- \[ \] .*<!-- record:\d+ -->", ln) for ln in lines
+    )
+    return "\n".join(lines) + "\n", complete
+
+
 def save(body: str, issue: int, data_dir: Path) -> str:
     """Validate a record issue and write its rows to the CSV files.
 
@@ -383,10 +434,9 @@ def save(body: str, issue: int, data_dir: Path) -> str:
         section = SECTIONS[name]
         columns = [column_key(c) for c in section["columns"]]
         write_csv(data_dir / section["file"], issue, columns, rows)
-        unknown = sum(v == UNKNOWN for r in rows for v in r.values())
         lines.append(
             f"- **{name}**: {len(rows)} row(s) in `{data_dir.as_posix()}/"
-            f"{section['file']}`" + (f", {unknown} unknown value(s)" if unknown else "")
+            f"{section['file']}`"
         )
     lines += [f"- {w}" for w in warnings]
     return "\n".join(lines)
@@ -397,7 +447,9 @@ def main(argv: list[str] | None = None) -> None:
 
     ``kind`` prints the record kind (or nothing). ``save`` writes the CSV
     files and the reply message; it exits with status 1 and writes the errors
-    to the message file if the record is invalid.
+    to the message file if the record is invalid. ``tick`` ticks record
+    ``--issue``'s lines in the check-in body file, in place, and prints
+    ``complete`` or ``open``.
 
     Parameters
     ----------
@@ -406,7 +458,7 @@ def main(argv: list[str] | None = None) -> None:
 
     """
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=["kind", "save"])
+    p.add_argument("command", choices=["kind", "save", "tick"])
     p.add_argument("--body-file", type=Path, required=True)
     p.add_argument("--issue", type=int)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -415,6 +467,11 @@ def main(argv: list[str] | None = None) -> None:
     body = args.body_file.read_text(encoding="utf-8")
     if args.command == "kind":
         print(record_kind(body) or "")
+        return
+    if args.command == "tick":
+        body, complete = tick_check_in(body, args.issue)
+        args.body_file.write_text(body, encoding="utf-8")
+        print("complete" if complete else "open")
         return
     try:
         message = save(body, args.issue, args.data_dir)

@@ -6,6 +6,7 @@ Composite actions used by the Green DiSC toolkit template, which helps research 
 |---|---|
 | [`sync_criteria`](sync_criteria/README.md) | Generate `criteria.yml` from the upstream Green DiSC criteria |
 | [`save_record`](save_record/README.md) | Save Green DiSC record issues (Markdown tables) to CSV files on `/save` |
+| [`review_cycle`](review_cycle/README.md) | Start a review cycle: milestone and check-ins |
 
 ## Development
 
