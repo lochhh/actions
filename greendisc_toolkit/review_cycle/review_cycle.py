@@ -5,7 +5,7 @@
 """Start a Green DiSC review cycle.
 
 Creates the cycle's milestone and one check-in per record owner (the
-representative's also covers the guides, README and meeting), then closes the
+representative's also covers the group record, guides and README), then closes the
 previous cycle. Safe to re-run: anything that already exists in the
 cycle's milestone is left alone.
 """
@@ -156,15 +156,16 @@ def members(collaborators: list[dict], actor: str) -> list[str]:
     Returns
     -------
     list of str
-        GitHub usernames of people with the Write or Maintain role, and
-        `actor`. Admins are left out: in an organisation they are often owners
-        who aren't in the group. Bots are left out too.
+        GitHub usernames of people with the Write, Maintain or Admin role,
+        and `actor`. Bots are left out. Anyone who doesn't need a record has it
+        closed once, and it is never recreated.
 
     """
     logins = [
         c["login"]
         for c in collaborators
-        if c.get("role_name") in {"write", "maintain"} and c.get("type") != "Bot"
+        if c.get("role_name") in {"write", "maintain", "admin"}
+        and c.get("type") != "Bot"
     ]
     return sorted(set(logins) | {actor})
 
@@ -232,7 +233,7 @@ def check_in_body(
     Lines for records the bot tracks end with a hidden record marker, so a
     successful ``/save`` of that record can tick them. A member's check-in
     closes once their record is saved; the representative's carries
-    `KEEP_OPEN`, so it stays open until they close it after the meeting.
+    `KEEP_OPEN`, so it stays open until they have done the rest and close it.
 
     Parameters
     ----------
@@ -281,14 +282,19 @@ def check_in_body(
         )
     elif group:
         lines.append(f"- [ ] Update the group record (#{group}).")
-    guides = f"- [ ] [Guides]({site}/tree/HEAD/guides): "
+    # Everyone, the representative included, looks after the guides.
+    lines.append(
+        f"- [ ] [Guides]({site}/tree/HEAD/guides): go over them, opening pull "
+        "requests to make changes as needed, and review any "
+        f"[open pull requests]({site}/pulls) to update the guides."
+    )
     if is_rep:
         lines += [
-            guides + "check they're up to date, and review members' pull requests.",
             (
                 f"- [ ] [README]({site}#your-green-disc-representative): check the "
-                "*Your Green DiSC representative* section and the *Where the "
-                "evidence lives* table are still right."
+                "*Your Green DiSC representative* section is up to date and the "
+                "*Where the evidence lives* table still matches the criteria "
+                f"({criteria_links})."
             ),
         ]
         if criteria_pr:
@@ -305,28 +311,20 @@ def check_in_body(
             )
             lines.append(
                 "- [ ] Saved rows belong to records that no longer exist: "
-                f"{where}. If that was intended, delete those rows (the ones "
-                "with that `record` number) from the files in `data/` on GitHub. "
-                "If not, add the items to their owner's record and `/save` it, "
-                "then delete the old rows. Editing these files by hand is fine "
-                "here, since no record will overwrite those rows."
+                f"{where}. Delete those rows (the ones with that `record` "
+                "number); editing these files by hand is fine here, since no "
+                "record will overwrite them. If a record was deleted by mistake, "
+                "the next review creates a new one for its owner to fill in."
             )
         lines += [
-            (
-                "- [ ] At the review meeting, go through the evidence for each "
-                f"criterion ({criteria_links}) with the group, then close this "
-                "check-in."
-            ),
             "",
             (
-                "Saving a record ticks its line; tick the others yourself. "
-                f"This check-in stays open until you close it. {KEEP_OPEN}"
+                "Saving a record ticks its line; tick the others yourself, and "
+                f"close this check-in when you've done the rest. {KEEP_OPEN}"
             ),
         ]
     else:
         lines += [
-            guides + "read them. To suggest anything new or outdated, edit the "
-            "page on GitHub and choose to start a pull request.",
             "",
             "Saving your record ticks its line and closes this check-in.",
         ]
@@ -430,7 +428,7 @@ def start_cycle(
         Cycle name; blank for the default.
     actor
         Who started the review: the representative, whose check-in also covers
-        the group record, the guides, the README and the meeting.
+        the group record, the guides and the README.
     criteria_pr
         Number of an open criteria sync pull request, or blank.
     personal_form

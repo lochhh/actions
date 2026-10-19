@@ -1,17 +1,17 @@
 # Start a Green DiSC review cycle
 
-This action starts a review cycle in a repository created from the Green DiSC toolkit template. A cycle is the period leading up to one review meeting; its milestone's due date is the meeting date, chosen by the team.
+This action starts a review cycle in a repository created from the Green DiSC toolkit template. A cycle is the period leading up to one review; its milestone's due date is the review date, chosen by the team.
 
 It:
 
 1. checks that whoever ran the workflow has the **Maintain** or **Admin** role, and stops otherwise;
-2. creates the group record if the repository has never had one (from the group record form, assigned to whoever started the review), and a personal record for each member who has never had one (people with the Write or Maintain role, and whoever started the review; not admins or bots), from the personal record form's tables, titled `Green DiSC personal record: <username>` and assigned to them;
+2. creates the group record if the repository has never had one (from the group record form, assigned to whoever started the review), and a personal record for each member who has never had one (people with the Write, Maintain or Admin role, and whoever started the review; not bots), from the personal record form's tables, titled `Green DiSC personal record: <username>` and assigned to them;
 3. creates the cycle's milestone (default name `Review-<year>-<month>` of the due date; spaces in a given name become hyphens, because GitHub's milestone links don't quote names);
-4. creates a check-in for each owner of an open personal record, assigned to them, asking them to go over their record, the group record and the guides; the check-in of whoever started the review (the representative) also asks them to save the group record, review guide pull requests, check the README and hold the meeting, plus checking and merging the criteria sync pull request when `criteria-pr` is given, and links the criteria text for the tiers in `config.yml` (`tiers`, default `[Bronze]`);
+4. creates a check-in for each owner of an open personal record, assigned to them, asking them to go over their record, the group record and the guides (suggesting and reviewing changes as pull requests); the check-in of whoever started the review (the representative) also asks them to save the group record, check the README against the criteria, plus checking and merging the criteria sync pull request when `criteria-pr` is given, and links the criteria text for the tiers in `config.yml` (`tiers`, default `[Bronze]`);
 5. closes the previous cycle: its open check-ins are closed, then its milestone is closed;
 6. writes a summary to the job summary, including records with unsaved changes.
 
-Check-ins are to-do lists. Lines for records the bot tracks end with a hidden `<!-- record:N -->` marker; when record N is saved, [`save_record`](../save_record/README.md) ticks them and closes the check-in once all tracked lines are ticked, unless it contains `<!-- keep-open -->`: the representative's check-in stays open until they close it after the meeting. The member's line about adding to the group record has no marker: it's a reminder, since most people will have nothing to add.
+Check-ins are to-do lists. Lines for records the bot tracks end with a hidden `<!-- record:N -->` marker; when record N is saved, [`save_record`](../save_record/README.md) ticks them and closes the check-in once all tracked lines are ticked, unless it contains `<!-- keep-open -->`: the representative's check-in stays open until they close it. The member's line about adding to the group record has no marker: it's a reminder, since most people will have nothing to add.
 
 Running it again for the same cycle adds only what's missing, so a failed run can be re-run.
 
@@ -40,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       due:
-        description: Review meeting date (YYYY-MM-DD)
+        description: Review date (YYYY-MM-DD)
         required: true
       name:
         description: Cycle name (default Review-<year>-<month>)

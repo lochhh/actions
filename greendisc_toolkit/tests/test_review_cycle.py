@@ -57,7 +57,8 @@ def body(is_rep):
 
 def test_member_check_in_closes_after_saving_own_record():
     """A member's check-in closes once their own record is saved."""
-    assert "start a pull request" in body(False)
+    assert "opening pull requests" in body(False)
+    assert "opening pull requests" in body(True)
     assert sr.tick_check_in(body(False), 8)[1]
 
 
@@ -78,7 +79,7 @@ def test_rep_check_in_stays_open():
 
 
 def test_members_are_writers_and_maintainers():
-    """Admins and bots don't get a record; whoever starts the review does."""
+    """Everyone with Write access or above gets a record; bots don't."""
     collaborators = [
         {"login": "amy", "role_name": "write", "type": "User"},
         {"login": "rep", "role_name": "maintain", "type": "User"},
@@ -86,7 +87,7 @@ def test_members_are_writers_and_maintainers():
         {"login": "reader", "role_name": "read", "type": "User"},
         {"login": "ci", "role_name": "write", "type": "Bot"},
     ]
-    assert rc.members(collaborators, "boss") == ["amy", "boss", "rep"]
+    assert rc.members(collaborators, "rep") == ["amy", "boss", "rep"]
 
 
 def test_record_owner_is_assignee_else_author():
