@@ -93,38 +93,6 @@ def cycle_name(due: datetime.date, name: str = "") -> str:
     return "-".join(name.split()) or f"Review-{due:%Y-%m}"
 
 
-def criteria_for(criteria: dict, tiers: list[str]) -> list[dict]:
-    """Return the criteria of the chosen tiers, with their tier's details.
-
-    Parameters
-    ----------
-    criteria
-        Parsed ``criteria.yml``.
-    tiers
-        Tier names to review, e.g. ``["Bronze"]``.
-
-    Returns
-    -------
-    list of dict
-        One dict per criterion, adding ``tier`` and ``file`` to its fields.
-
-    Raises
-    ------
-    ValueError
-        If a tier is not in `criteria`.
-
-    """
-    by_name = {t["name"]: t for t in criteria.get("tiers", [])}
-    unknown = [t for t in tiers if t not in by_name]
-    if unknown:
-        raise ValueError(f"Tier(s) not in criteria.yml: {', '.join(unknown)}")
-    return [
-        {**c, "tier": t, "file": by_name[t].get("file", "")}
-        for t in tiers
-        for c in by_name[t].get("criteria") or []
-    ]
-
-
 def record_owner(issue: dict) -> str:
     """Return a record's owner: its assignee, or else whoever created it.
 
@@ -143,21 +111,19 @@ def record_owner(issue: dict) -> str:
     return assignees[0]["login"] if assignees else issue["user"]["login"]
 
 
-def members(collaborators: list[dict], actor: str) -> list[str]:
+def members(collaborators: list[dict]) -> list[str]:
     """Return who should have a personal record.
 
     Parameters
     ----------
     collaborators
         Repository collaborators from the GitHub API, with ``role_name``.
-    actor
-        Who started the review; always included.
 
     Returns
     -------
     list of str
-        GitHub usernames of people with the Write, Maintain or Admin role,
-        and `actor`. Bots are left out. Anyone who doesn't need a record has it
+        GitHub usernames of people with the Write, Maintain or Admin role
+        (which includes whoever starts the review). Bots are left out. Anyone who doesn't need a record has it
         closed once, and it is never recreated.
 
     """
@@ -167,7 +133,7 @@ def members(collaborators: list[dict], actor: str) -> list[str]:
         if c.get("role_name") in {"write", "maintain", "admin"}
         and c.get("type") != "Bot"
     ]
-    return sorted(set(logins) | {actor})
+    return sorted(logins)
 
 
 def form_body(form: dict) -> str:
@@ -224,7 +190,6 @@ def check_in_body(
     group: int | None,
     is_rep: bool,
     repo: str,
-    criteria_links: str,
     criteria_pr: str = "",
     orphans: dict[int, list[str]] | None = None,
 ) -> str:
@@ -249,8 +214,6 @@ def check_in_body(
         Whether this check-in is the representative's.
     repo
         ``owner/name``, for links to the guides and README.
-    criteria_links
-        Markdown links to the upstream criteria text.
     criteria_pr
         Number of an open criteria sync pull request, if any.
     orphans
@@ -292,9 +255,7 @@ def check_in_body(
         lines += [
             (
                 f"- [ ] [README]({site}#your-green-disc-representative): check the "
-                "*Your Green DiSC representative* section is up to date and the "
-                "*Where the evidence lives* table still matches the criteria "
-                f"({criteria_links})."
+                "*Your Green DiSC representative* section is up to date."
             ),
         ]
         if criteria_pr:
@@ -310,11 +271,12 @@ def check_in_body(
                 for n, files in sorted(orphans.items())
             )
             lines.append(
-                "- [ ] Saved rows belong to records that no longer exist: "
-                f"{where}. Delete those rows (the ones with that `record` "
-                "number); editing these files by hand is fine here, since no "
-                "record will overwrite them. If a record was deleted by mistake, "
-                "the next review creates a new one for its owner to fill in."
+                "- [ ] Rows in the data files belong to records that no longer "
+                f"exist: {where}. Usually, delete those rows (the ones with that "
+                "`record` number); editing these files by hand is fine here, since "
+                "no record will overwrite them. If a record was deleted by mistake, "
+                "the next review creates a new one for its owner to fill in; delete "
+                "the old rows once they have."
             )
         lines += [
             "",
@@ -401,8 +363,6 @@ def issues_with(repo: str, query: str) -> list[dict]:
 
 def start_cycle(
     repo: str,
-    criteria: dict,
-    config: dict,
     due: datetime.date,
     name: str,
     actor: str,
@@ -418,10 +378,6 @@ def start_cycle(
     ----------
     repo
         ``owner/name``.
-    criteria
-        Parsed ``criteria.yml``.
-    config
-        Parsed ``config.yml``.
     due
         Review date.
     name
@@ -445,13 +401,6 @@ def start_cycle(
 
     """
     cycle = cycle_name(due, name)
-    tiers = config.get("tiers") or ["Bronze"]
-    chosen = criteria_for(criteria, tiers)
-    source = f"{criteria['source']}/blob/{criteria['source_commit']}"
-    files = {c["tier"]: c["file"] for c in chosen}
-    criteria_links = ", ".join(
-        f"[{tier}]({source}/{file.replace(' ', '%20')})" for tier, file in files.items()
-    )
     report = [f"## {cycle}, due {due:%Y-%m-%d}", ""]
 
     milestones = api_list(f"repos/{repo}/milestones?state=all&per_page=100")
@@ -506,8 +455,7 @@ def start_cycle(
             for r in issues_with(repo, "labels=personal-record&state=all")
         }
         people = members(
-            api_list(f"repos/{repo}/collaborators?affiliation=all&per_page=100"),
-            actor,
+            api_list(f"repos/{repo}/collaborators?affiliation=all&per_page=100")
         )
         created = []
         for login in people:
@@ -588,7 +536,6 @@ def start_cycle(
                 group,
                 login == actor,
                 repo,
-                criteria_links,
                 criteria_pr if login == actor else "",
                 orphans if login == actor else None,
             ),
@@ -654,8 +601,6 @@ def main(argv: list[str] | None = None) -> None:
 
     """
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--criteria", type=Path, required=True, help="criteria.yml as JSON")
-    p.add_argument("--config", type=Path, required=True, help="config.yml as JSON")
     p.add_argument("--due", required=True)
     p.add_argument("--name", default="")
     p.add_argument("--criteria-pr", default="")
@@ -669,8 +614,6 @@ def main(argv: list[str] | None = None) -> None:
         due = parse_due(args.due)
         start_cycle(
             os.environ["GITHUB_REPOSITORY"],
-            json.loads(args.criteria.read_text(encoding="utf-8")),
-            json.loads(args.config.read_text(encoding="utf-8")),
             due,
             args.name,
             os.environ["GITHUB_ACTOR"],

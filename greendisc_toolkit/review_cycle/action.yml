@@ -13,10 +13,6 @@ inputs:
     description: 'Number of an open criteria sync pull request, if any; the representative is asked to check and merge it.'
     required: false
     default: ''
-  config:
-    description: 'Path of config.yml (tiers).'
-    required: false
-    default: 'config.yml'
   personal-form:
     description: 'Issue form whose tables become the body of personal records created for members without one. Leave empty to create none.'
     required: false
@@ -29,10 +25,6 @@ inputs:
     description: 'Directory of the CSV files written by save_record, checked for rows whose record no longer exists.'
     required: false
     default: 'data'
-  criteria:
-    description: 'Path of criteria.yml.'
-    required: false
-    default: 'criteria.yml'
   token:
     description: 'Token with issues: write.'
     required: false
@@ -53,8 +45,6 @@ runs:
         DUE: ${{ inputs.due }}
         NAME: ${{ inputs.name }}
         CRITERIA_PR: ${{ inputs.criteria-pr }}
-        CONFIG: ${{ inputs.config }}
-        CRITERIA: ${{ inputs.criteria }}
         DATA_DIR: ${{ inputs.data-dir }}
         PERSONAL_FORM: ${{ inputs.personal-form }}
         GROUP_FORM: ${{ inputs.group-form }}
@@ -66,13 +56,7 @@ runs:
           admin|maintain) ;;
           *) echo "::error::Only people with the Maintain or Admin role can start a review (you have '${role:-none}')."; exit 1 ;;
         esac
-        if [ ! -f "$CRITERIA" ]; then
-          echo "::error::$CRITERIA not found. Run the criteria sync and merge its pull request first."
-          exit 1
-        fi
         # yq is preinstalled on GitHub-hosted runners; the script stays stdlib-only.
-        yq -o=json '.' "$CONFIG" > "$RUNNER_TEMP/config.json"
-        yq -o=json '.' "$CRITERIA" > "$RUNNER_TEMP/criteria.json"
         form_args=()
         if [ -n "$PERSONAL_FORM" ] && [ -f "$PERSONAL_FORM" ]; then
           yq -o=json '.' "$PERSONAL_FORM" > "$RUNNER_TEMP/personal-form.json"
@@ -83,5 +67,4 @@ runs:
           form_args+=(--group-form "$RUNNER_TEMP/group-form.json")
         fi
         python "$GITHUB_ACTION_PATH/review_cycle.py" \
-          --config "$RUNNER_TEMP/config.json" --criteria "$RUNNER_TEMP/criteria.json" \
           --due "$DUE" --name "$NAME" --criteria-pr "$CRITERIA_PR" --data-dir "$DATA_DIR" "${form_args[@]}"
