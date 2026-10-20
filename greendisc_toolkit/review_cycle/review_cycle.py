@@ -23,7 +23,6 @@ from pathlib import Path
 
 CYCLE_MARKER = "<!-- greendisc:review-cycle -->"
 CHECK_IN_LABEL = "check-in"
-KEEP_OPEN = "<!-- keep-open -->"
 
 
 def record_marker(record: int) -> str:
@@ -193,14 +192,14 @@ def check_in_body(
     repo: str,
     criteria_pr: str = "",
     orphans: dict[int, list[str]] | None = None,
-    guide_changes: tuple[str, int] | None = None,
+    guide_changes: tuple[str, list[str]] | None = None,
 ) -> str:
     """Return the body of a member's check-in.
 
-    Lines for records the bot tracks end with a hidden record marker, so a
-    successful ``/save`` of that record can tick them. A member's check-in
-    closes once their record is saved; the representative's carries
-    `KEEP_OPEN`, so it stays open until they have done the rest and close it.
+    Lines for records end with a hidden record marker: only a successful
+    ``/save`` of that record ticks them (``save_record`` undoes hand ticks).
+    People tick the other lines themselves, and the check-in closes once
+    every line is ticked.
 
     Parameters
     ----------
@@ -242,12 +241,14 @@ def check_in_body(
     if record:
         lines.append(
             f"- [ ] Update your personal record (#{record}), then comment "
-            f"`/save` on it. {record_marker(record)}"
+            "`/save` on it: this ticks itself when the record is saved, so "
+            f"don't tick it by hand. {record_marker(record)}"
         )
     if group and is_rep:
         lines.append(
             f"- [ ] Update the group record (#{group}) and review members' "
-            f"changes, then comment `/save` on it. {record_marker(group)}"
+            "changes, then comment `/save` on it: this ticks itself when the "
+            f"record is saved. {record_marker(group)}"
         )
     elif group:
         lines.append(f"- [ ] Update the group record (#{group}).")
@@ -298,17 +299,21 @@ def check_in_body(
                 "was deleted by mistake, the next review creates a new one for its "
                 "owner to fill in; delete the old rows once they have."
             )
+    lines += [
+        "",
+        (
+            "Tick the other items as you do them. This check-in closes by itself "
+            "once everything is ticked."
+        ),
+    ]
+    if is_rep:
         lines += [
             "",
             (
-                "Saving a record ticks its line; tick the others yourself, and "
-                f"close this check-in when you've done the rest. {KEEP_OPEN}"
+                "As the representative, you can close a member's check-in that "
+                "can't be finished, e.g. while they're on leave; when anyone else "
+                "closes an unfinished check-in, it's reopened."
             ),
-        ]
-    else:
-        lines += [
-            "",
-            "Saving your record ticks its line and closes this check-in.",
         ]
     return "\n".join(lines) + "\n"
 

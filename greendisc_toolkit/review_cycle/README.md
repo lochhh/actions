@@ -11,7 +11,7 @@ It:
 5. closes the previous cycle: its open check-ins are closed, then its milestone is closed;
 6. writes a summary to the job summary, including records with unsaved changes.
 
-Check-ins are to-do lists. Lines for records the bot tracks end with a hidden `<!-- record:N -->` marker; when record N is saved, [`save_record`](../save_record/README.md) ticks them and closes the check-in once all tracked lines are ticked, unless it contains `<!-- keep-open -->`: the representative's check-in stays open until they close it. The member's line about adding to the group record has no marker: it's a reminder, since most people will have nothing to add.
+Check-ins are to-do lists, and each closes by itself once every item is ticked. Lines for records end with a hidden `<!-- record:N -->` marker and are ticked only when record N is saved: [`save_record`](../save_record/README.md) ticks them on a successful `/save`, and undoes a tick a person gives them by hand. People tick the other items themselves. A check-in closed while items are still unticked is reopened, unless whoever closed it has the Maintain or Admin role (the representative, e.g. for a member on leave).
 
 Running it again for the same cycle adds only what's missing, so a failed run can be re-run.
 

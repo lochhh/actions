@@ -28,11 +28,16 @@ def body(is_rep):
     return rc.check_in_body("R", DUE, 8, 9, is_rep, "o/r")
 
 
-def test_member_check_in_closes_after_saving_own_record():
-    """A member's check-in closes once their own record is saved."""
-    assert "opening pull requests" in body(False)
-    assert "opening pull requests" in body(True)
-    assert sr.tick_check_in(body(False), 8)[1]
+def test_member_check_in_closes_once_everything_ticked():
+    """Saving the record isn't enough: the reminders must be ticked too."""
+    member = body(False)
+    assert "opening pull requests" in member and "don't tick it by hand" in member
+    assert "closes by itself once everything is ticked" in member
+    assert "As the representative" not in member
+    text, complete = sr.tick_check_in(member, 8)
+    assert not complete and len(sr.unticked_items(text)) == 2
+    text = text.replace("- [ ]", "- [x]")
+    assert sr.tick_check_in(text, 8)[1]
 
 
 def test_criteria_line_only_with_sync_pr():
@@ -55,12 +60,14 @@ def test_guides_line_only_when_guides_changed():
     )
 
 
-def test_rep_check_in_stays_open():
-    """Saving both records ticks the rep's lines but leaves it open."""
-    text, complete = sr.tick_check_in(body(True), 8)
+def test_rep_check_in_follows_the_same_rule():
+    """The rep's check-in also closes once everything is ticked."""
+    rep = body(True)
+    assert "As the representative, you can close" in rep
+    text, complete = sr.tick_check_in(rep, 8)
     text, complete = sr.tick_check_in(text, 9)
-    assert "- [x] Update your personal record" in text
     assert "- [x] Update the group record" in text and not complete
+    assert sr.tick_check_in(text.replace("- [ ]", "- [x]"), 9)[1]
 
 
 def test_members_are_writers_and_maintainers():
