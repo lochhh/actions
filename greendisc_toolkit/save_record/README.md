@@ -8,9 +8,10 @@ This action saves Green DiSC *record issues* to CSV files. A record issue holds 
 - **When a record's body is edited**, the action adds the `unsaved changes` label, so edits that were never saved are easy to find (`label:"unsaved changes"`).
 - **A personal record can be saved by its owner (with write access) or a maintainer/admin; the group record, which anyone with write access can edit, only by a maintainer/admin.** The action checks the commenter's role, since the workflow's `author_association` filter also lets read-only organisation members through; anyone else gets a reply explaining why nothing was saved.
 - **After a successful save**, the action ticks the record's lines in open review check-ins (issues labelled `check-in`, created by [`review_cycle`](../review_cycle/README.md)), and closes a check-in once all its tracked lines are ticked.
+- **When a record is closed** (its owner left), the action removes its rows from every CSV file, commits, and replies with what was removed, so the files hold current evidence only. Reopening the record and commenting `/save` restores them.
 - **If any row is invalid**, nothing is written: the reply lists each problem by section, row and column, and the `unsaved changes` label stays.
 
-Blank cells are saved as `unknown`, so missing data stays visible; `n/a` (or `na`, `-`) marks a cell that doesn't apply. Missing or reordered columns are fine; unrecognised columns are ignored with a warning. Each CSV has a `record` column with the issue number, which is how a later `/save` finds the rows to replace; edits made directly to the CSV are overwritten by the next `/save` of that issue.
+Blank cells are saved as `unknown`, so missing data stays visible; `-` (or `n/a`, `na`) marks a cell that doesn't apply. Optional columns (Notes, Location, Asset tag) stay blank when blank. Missing or reordered columns are fine; unrecognised columns are ignored with a warning. Each CSV has a `record` column with the issue number, which is how a later `/save` finds the rows to replace; edits made directly to the CSV are overwritten by the next `/save` of that issue.
 
 If another save lands at the same time, the push is retried on the latest branch (up to 5 times), so concurrent saves don't conflict.
 
@@ -30,13 +31,14 @@ The calling workflow decides who may trigger it. The Green DiSC toolkit template
 ```yaml
 on:
   issues:
-    types: [edited]
+    types: [edited, closed]
   issue_comment:
     types: [created]
 
 jobs:
   record:
     # Issues only (not PRs); a cheap first filter, the action checks roles.
+    # Issue events: edits flag unsaved changes, closing removes the rows.
     if: >-
       !github.event.issue.pull_request &&
       (github.event_name == 'issues' ||

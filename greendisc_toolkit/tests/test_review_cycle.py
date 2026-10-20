@@ -90,7 +90,7 @@ def test_form_body_matches_issue_rendering():
 
 
 def test_orphaned_rows(tmp_path):
-    """Rows from records that no longer exist are found, per file."""
+    """Rows from records that aren't open are found, per file."""
     (tmp_path / "hardware.csv").write_text("record,type\n8,laptop\n9,desk\n43,mouse\n")
     (tmp_path / "pipelines.csv").write_text("record,name\n8,sorter\n")
     found = rc.orphaned_rows(tmp_path, {9, 43})
@@ -100,9 +100,9 @@ def test_orphaned_rows(tmp_path):
 
 
 def test_rep_check_in_lists_orphans():
-    """Only the rep is asked about rows from deleted records, and only if any."""
+    """Only the rep is asked about rows from records that aren't open, if any."""
     orphans = {8: ["data/hardware.csv"]}
     rep = rc.check_in_body("R", DUE, 43, 9, True, "o/r", "", orphans)
     link = "[hardware.csv](https://github.com/o/r/blob/HEAD/data/hardware.csv)"
-    assert f"no longer exist: #8 ({link})" in rep
-    assert "no longer exist" not in body(True)
+    assert f"(closed, deleted or unlabelled): #8 ({link})" in rep
+    assert "aren't open" not in body(True)

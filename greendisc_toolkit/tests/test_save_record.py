@@ -63,7 +63,10 @@ def test_record_kind():
 
 
 def test_parse_normalises_and_skips_blank_rows():
-    """Hint comments are ignored, Type and listed values are lower-cased."""
+    """Hint comments are ignored, Type and listed values are lower-cased.
+
+    Blank Location and Asset tag stay blank (optional); other blanks are unknown.
+    """
     rows, warnings = sr.parse_record(body())
     assert warnings == []
     assert rows["Hardware"] == [
@@ -75,8 +78,8 @@ def test_parse_normalises_and_skips_blank_rows():
             "warranty": "3 years",
             "status": "in use",
             "action": "unknown",
-            "location": "unknown",
-            "asset_tag": "unknown",
+            "location": "",
+            "asset_tag": "",
             "notes": "",
         },
         {
@@ -87,8 +90,8 @@ def test_parse_normalises_and_skips_blank_rows():
             "warranty": "unknown",
             "status": "unused",
             "action": "donate",
-            "location": "unknown",
-            "asset_tag": "unknown",
+            "location": "",
+            "asset_tag": "",
             "notes": "",
         },
     ]
@@ -280,3 +283,35 @@ def test_not_applicable_in_any_column(value):
     """n/a is allowed in every column and kept apart from unknown."""
     for spec in (None, sr.LOWER, sr.YEAR, sr.SIZE, sr.DATE, sr.COUNT, ["in use"]):
         assert sr.validate(value, spec, 2030) == "n/a"
+
+
+def test_remove_drops_only_this_records_rows(tmp_path):
+    """Closing a record removes its rows from every file and keeps others'."""
+    sr.save(body(), 5, tmp_path)
+    sr.save(body("| Type |\n|---|\n| tablet |\n"), 3, tmp_path)
+    message = sr.remove(5, tmp_path)
+    rows = read(tmp_path / "hardware.csv")
+    assert [(r["record"], r["type"]) for r in rows] == [("3", "tablet")]
+    assert "2 row(s) removed" in message
+    assert sr.remove(5, tmp_path) == ""
+
+
+def test_cli_remove_needs_no_body(tmp_path):
+    """The remove command works without --body-file; others need it."""
+    sr.save(body(), 5, tmp_path)
+    msg = tmp_path / "msg.md"
+    sr.main(
+        [
+            "remove",
+            "--issue",
+            "5",
+            "--data-dir",
+            str(tmp_path),
+            "--message-file",
+            str(msg),
+        ]
+    )
+    assert "removed" in msg.read_text(encoding="utf-8")
+    assert read(tmp_path / "hardware.csv") == []
+    with pytest.raises(SystemExit):
+        sr.main(["kind"])

@@ -158,19 +158,19 @@ def form_body(form: dict) -> str:
 
 
 def orphaned_rows(data_dir: Path, records: set[int]) -> dict[int, list[str]]:
-    """Find saved rows whose record no longer exists.
+    """Find saved rows whose record isn't open.
 
     Parameters
     ----------
     data_dir
         Directory with the CSV files written by ``save_record``.
     records
-        Numbers of every record issue, open or closed.
+        Numbers of the open record issues.
 
     Returns
     -------
     dict of int to list of str
-        Missing record number to the CSV files (paths as ``<data_dir>/<name>``)
+        Other record number to the CSV files (paths as ``<data_dir>/<name>``)
         that still have its rows.
 
     """
@@ -217,7 +217,7 @@ def check_in_body(
     criteria_pr
         Number of an open criteria sync pull request, if any.
     orphans
-        Saved rows whose record no longer exists (see `orphaned_rows`).
+        Saved rows whose record isn't open (see `orphaned_rows`).
 
     Returns
     -------
@@ -271,12 +271,13 @@ def check_in_body(
                 for n, files in sorted(orphans.items())
             )
             lines.append(
-                "- [ ] Rows in the data files belong to records that no longer "
-                f"exist: {where}. Usually, delete those rows (the ones with that "
-                "`record` number); editing these files by hand is fine here, since "
-                "no record will overwrite them. If a record was deleted by mistake, "
-                "the next review creates a new one for its owner to fill in; delete "
-                "the old rows once they have."
+                "- [ ] Rows in the data files belong to records that aren't open "
+                f"(closed, deleted or unlabelled): {where}. Usually, delete those "
+                "rows (the ones with that `record` number); editing these files by "
+                "hand is fine here, since no record will overwrite them. If a record "
+                "was closed by mistake, reopen it and comment `/save` instead. If it "
+                "was deleted by mistake, the next review creates a new one for its "
+                "owner to fill in; delete the old rows once they have."
             )
         lines += [
             "",
@@ -498,17 +499,13 @@ def start_cycle(
         report.append(f"Created the group record, #{issue['number']}.")
     records = issues_with(repo, "labels=personal-record&state=open")
     groups = issues_with(repo, "labels=group-record&state=open")
-    # Rows saved from records that were since deleted (or unlabelled) would
-    # otherwise stay in the data forever: ask the representative about them.
-    every_record = {
-        i["number"]
-        for kind in ("personal-record", "group-record")
-        for i in issues_with(repo, f"labels={kind}&state=all")
-    }
-    orphans = orphaned_rows(data_dir, every_record)
+    # Closing a record removes its rows, so rows from records that aren't open
+    # (deleted, unlabelled, or closed before that) would otherwise stay in the
+    # data forever: ask the representative about them.
+    orphans = orphaned_rows(data_dir, {i["number"] for i in records + groups})
     if orphans:
         report.append(
-            "Saved rows from records that no longer exist: "
+            "Saved rows from records that aren't open: "
             + ", ".join(f"#{n}" for n in orphans)
             + "."
         )

@@ -8,6 +8,7 @@ A record issue holds one Markdown table per section (e.g. ``### Hardware``).
 Tables are read by column header, validated, and written to
 ``<data-dir>/<section>.csv``, replacing the rows previously saved from the same
 issue. Validation is all-or-nothing: if any row is invalid, nothing is written.
+Closing a record removes its rows, so the CSV files hold current evidence only.
 """
 
 import argparse
@@ -52,8 +53,9 @@ SECTIONS = {
             "Warranty": None,
             "Status": ["in use", "unused", "disposed"],
             "Action": None,
-            "Location": None,
-            "Asset tag": None,
+            # Left blank in repositories that are or could become public.
+            "Location": OPTIONAL,
+            "Asset tag": OPTIONAL,
             "Notes": OPTIONAL,
         },
     },
@@ -62,7 +64,7 @@ SECTIONS = {
         "columns": {
             "Name": None,
             "Hosted by": ["us", "external"],
-            "Location": None,
+            "Location": OPTIONAL,
             "Size": SIZE,
             "If lost": ["easy to replace", "hard to replace", "irreplaceable"],
             "Status": ["in use", "archived", "deleted"],
@@ -442,6 +444,40 @@ def save(body: str, issue: int, data_dir: Path) -> str:
     return "\n".join(lines)
 
 
+def remove(issue: int, data_dir: Path) -> str:
+    """Remove a closed record's rows from the CSV files.
+
+    Parameters
+    ----------
+    issue
+        Issue number of the closed record.
+    data_dir
+        Directory holding the CSV files.
+
+    Returns
+    -------
+    str
+        Markdown summary for the reply comment; empty if the record had no
+        saved rows.
+
+    """
+    lines = []
+    for name, section in SECTIONS.items():
+        path = data_dir / section["file"]
+        if not path.exists():
+            continue
+        with path.open(newline="", encoding="utf-8") as f:
+            count = sum(r["record"] == str(issue) for r in csv.DictReader(f))
+        if count:
+            columns = [column_key(c) for c in section["columns"]]
+            write_csv(path, issue, columns, [])
+            lines.append(
+                f"- **{name}**: {count} row(s) removed from "
+                f"`{data_dir.as_posix()}/{section['file']}`"
+            )
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the command-line interface.
 
@@ -449,7 +485,9 @@ def main(argv: list[str] | None = None) -> None:
     files and the reply message; it exits with status 1 and writes the errors
     to the message file if the record is invalid. ``tick`` ticks record
     ``--issue``'s lines in the check-in body file, in place, and prints
-    ``complete`` or ``open``.
+    ``complete`` or ``open``. ``remove`` deletes record ``--issue``'s rows
+    from the CSV files and writes the reply message (empty if it had none);
+    it needs no ``--body-file``.
 
     Parameters
     ----------
@@ -458,12 +496,18 @@ def main(argv: list[str] | None = None) -> None:
 
     """
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=["kind", "save", "tick"])
-    p.add_argument("--body-file", type=Path, required=True)
+    p.add_argument("command", choices=["kind", "save", "tick", "remove"])
+    p.add_argument("--body-file", type=Path)
     p.add_argument("--issue", type=int)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--message-file", type=Path)
     args = p.parse_args(argv)
+    if args.command == "remove":
+        message = remove(args.issue, args.data_dir)
+        args.message_file.write_text(message, encoding="utf-8")
+        return
+    if args.body_file is None:
+        p.error(f"{args.command} needs --body-file")
     body = args.body_file.read_text(encoding="utf-8")
     if args.command == "kind":
         print(record_kind(body) or "")

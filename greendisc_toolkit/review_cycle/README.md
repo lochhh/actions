@@ -26,7 +26,7 @@ The workflow's inputs reach the script only through environment variables. `yq`,
 | `criteria-pr` | (blank) | Number of an open criteria sync pull request; adds an item to the representative's check-in |
 | `personal-form` | `.github/ISSUE_TEMPLATE/personal-record.yml` | Issue form used for new personal records; empty to create none |
 | `group-form` | `.github/ISSUE_TEMPLATE/group-record.yml` | Issue form used for the group record if there has never been one; empty to create none |
-| `data-dir` | `data` | CSV files written by `save_record`; rows whose record no longer exists are listed in the representative's check-in |
+| `data-dir` | `data` | CSV files written by `save_record`; rows whose record isn't open are listed in the representative's check-in |
 | `token` | `github.token` | Token with `issues: write` |
 
 ## Examples of usage
