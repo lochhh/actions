@@ -106,3 +106,19 @@ updates:
       actions:
         patterns:
           - "*"
+  - package-ecosystem: "github-actions"
+    directory: /greendisc_toolkit/review_cycle
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+  - package-ecosystem: "github-actions"
+    directory: /greendisc_toolkit/export_evidence
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns:
+          - "*"
