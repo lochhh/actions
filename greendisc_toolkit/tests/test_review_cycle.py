@@ -42,6 +42,16 @@ def test_criteria_line_only_with_sync_pr():
     assert "- [ ] #42: Green DiSC's criteria changed" in with_pr
 
 
+def test_guides_line_only_when_guides_changed():
+    """The rep is asked to update published guides only after they changed."""
+    assert "guides changed" not in body(True)
+    rep = rc.check_in_body("R", DUE, 8, 9, True, "o/r", guide_changes=("2026-09-01", 3))
+    link = "https://github.com/o/r/commits/HEAD/guides?since=2026-09-01"
+    assert (
+        f"- [ ] The [guides changed]({link}) since the last review (3 commit(s))" in rep
+    )
+
+
 def test_rep_check_in_stays_open():
     """Saving both records ticks the rep's lines but leaves it open."""
     text, complete = sr.tick_check_in(body(True), 8)

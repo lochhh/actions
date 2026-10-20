@@ -7,7 +7,7 @@ It:
 1. checks that whoever ran the workflow has the **Maintain** or **Admin** role, and stops otherwise;
 2. creates the group record if the repository has never had one (from the group record form, assigned to whoever started the review), and a personal record for each member who has never had one (people with the Write, Maintain or Admin role; not bots), from the personal record form's tables, titled `Green DiSC personal record: <username>` and assigned to them;
 3. creates the cycle's milestone (default name `Review-<year>-<month>` of the due date; spaces in a given name become hyphens, because GitHub's milestone links don't quote names);
-4. creates a check-in for each owner of an open personal record, assigned to them, asking them to go over their record, the group record and the guides (suggesting and reviewing changes as pull requests); the check-in of whoever started the review (the representative) also asks them to save the group record, check the README's representative section, plus checking and merging the criteria sync pull request when `criteria-pr` is given;
+4. creates a check-in for each owner of an open personal record, assigned to them, asking them to go over their record, the group record and the guides (suggesting and reviewing changes as pull requests); the check-in of whoever started the review (the representative) also asks them to save the group record, check the README's representative section, plus, only when they apply: checking and merging the criteria sync pull request (when `criteria-pr` is given), updating any published copy of the guides (when `guides/` changed since the previous cycle started, with a link to those commits), and dealing with data rows whose record isn't open;
 5. closes the previous cycle: its open check-ins are closed, then its milestone is closed;
 6. writes a summary to the job summary, including records with unsaved changes.
 
@@ -27,7 +27,7 @@ The workflow's inputs reach the script only through environment variables. `yq`,
 | `personal-form` | `.github/ISSUE_TEMPLATE/personal-record.yml` | Issue form used for new personal records; empty to create none |
 | `group-form` | `.github/ISSUE_TEMPLATE/group-record.yml` | Issue form used for the group record if there has never been one; empty to create none |
 | `data-dir` | `data` | CSV files written by `save_record`; rows whose record isn't open are listed in the representative's check-in |
-| `token` | `github.token` | Token with `issues: write` |
+| `token` | `github.token` | Token with `issues: write` and `contents: read` (guide commits) |
 
 ## Examples of usage
 

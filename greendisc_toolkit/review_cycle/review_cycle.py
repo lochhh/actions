@@ -192,6 +192,7 @@ def check_in_body(
     repo: str,
     criteria_pr: str = "",
     orphans: dict[int, list[str]] | None = None,
+    guide_changes: tuple[str, int] | None = None,
 ) -> str:
     """Return the body of a member's check-in.
 
@@ -218,6 +219,10 @@ def check_in_body(
         Number of an open criteria sync pull request, if any.
     orphans
         Saved rows whose record isn't open (see `orphaned_rows`).
+    guide_changes
+        Start date (``YYYY-MM-DD``) of the previous cycle and the number of
+        commits to the guides since then, if any; the representative is asked
+        to update any published copy.
 
     Returns
     -------
@@ -262,6 +267,13 @@ def check_in_body(
             lines.append(
                 f"- [ ] #{criteria_pr}: Green DiSC's criteria changed; check the "
                 "upstream changes and merge it."
+            )
+        if guide_changes:
+            since, count = guide_changes
+            lines.append(
+                f"- [ ] The [guides changed]({site}/commits/HEAD/guides?since={since}) "
+                f"since the last review ({count} commit(s)): if you publish them "
+                "elsewhere, such as your website, update that copy."
             )
         if orphans:
             where = "; ".join(
@@ -509,6 +521,24 @@ def start_cycle(
             + ", ".join(f"#{n}" for n in orphans)
             + "."
         )
+    # Guides published elsewhere (e.g. a website) are copied by hand: ask the
+    # representative when they changed since the previous cycle started.
+    guide_changes = None
+    previous = max(
+        (
+            m
+            for m in milestones
+            if m["number"] != number and CYCLE_MARKER in (m.get("description") or "")
+        ),
+        key=lambda m: m["created_at"],
+        default=None,
+    )
+    if previous:
+        since = previous["created_at"][:10]
+        commits = api_list(f"repos/{repo}/commits?path=guides&since={since}T00:00:00Z")
+        if commits:
+            guide_changes = (since, len(commits))
+            report.append(f"Guides changed since {since}: {len(commits)} commit(s).")
     group = min((g["number"] for g in groups), default=None)
     owners = {}
     for r in sorted(records, key=lambda r: r["number"]):
@@ -535,6 +565,7 @@ def start_cycle(
                 repo,
                 criteria_pr if login == actor else "",
                 orphans if login == actor else None,
+                guide_changes if login == actor else None,
             ),
             [CHECK_IN_LABEL],
             [login],
