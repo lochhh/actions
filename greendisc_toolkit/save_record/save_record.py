@@ -31,9 +31,8 @@ SIZE_RE = re.compile(
     r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>[kmgtp]b)",
     re.IGNORECASE,
 )
-# Review check-in lines: ticked or not, and the marker of a record line.
+# Review check-in lines: an unticked item, and the marker of a record's line.
 UNTICKED = re.compile(r"\s*- \[ \] (.*)")
-TICKED = re.compile(r"(\s*)- \[[xX]\] ")
 RECORD_MARKER = re.compile(r"<!-- record:(\d+) -->")
 COUNT_RE = re.compile(
     r"(?P<approx>~|about|approx\.?|approximately)?\s*(?P<number>\d+)", re.IGNORECASE
@@ -399,11 +398,28 @@ def unticked_items(body: str) -> list[str]:
     ]
 
 
-def tick_check_in(body: str, record: int) -> tuple[str, bool]:
+def check_in_records(body: str) -> list[int]:
+    """Return the records a review check-in asks to save.
+
+    Parameters
+    ----------
+    body
+        Check-in issue body.
+
+    Returns
+    -------
+    list of int
+        Record numbers from the ``<!-- record:N -->`` markers, in order.
+
+    """
+    return [int(n) for n in RECORD_MARKER.findall(body)]
+
+
+def tick_check_in(body: str, record: int) -> str:
     """Tick a record's lines in a review check-in.
 
-    Check-in lines for records end with ``<!-- record:N -->`` and are ticked
-    only by saving record N; people tick the other lines themselves.
+    Check-in lines for records end with ``<!-- record:N -->``; saving record
+    N ticks them. People tick the other lines and close the check-in.
 
     Parameters
     ----------
@@ -414,10 +430,8 @@ def tick_check_in(body: str, record: int) -> tuple[str, bool]:
 
     Returns
     -------
-    body : str
+    str
         Body with that record's lines ticked.
-    complete : bool
-        Whether every line is now ticked.
 
     """
     marker = f"<!-- record:{record} -->"
@@ -425,46 +439,7 @@ def tick_check_in(body: str, record: int) -> tuple[str, bool]:
         ln.replace("- [ ]", "- [x]", 1) if marker in ln else ln
         for ln in body.splitlines()
     ]
-    body = "\n".join(lines) + "\n"
-    return body, not unticked_items(body)
-
-
-def untick_by_hand(old: str, new: str) -> tuple[str, list[int]]:
-    """Undo ticks that people gave to record lines in a check-in.
-
-    Record lines are ticked only by saving the record, which the bot does
-    without triggering an edit event; so a record line that a person's edit
-    ticked was ticked by hand.
-
-    Parameters
-    ----------
-    old
-        Check-in body before the edit.
-    new
-        Check-in body after the edit.
-
-    Returns
-    -------
-    body : str
-        `new` with those record lines unticked again.
-    records : list of int
-        Numbers of the records whose lines were unticked.
-
-    """
-    was_unticked = {
-        int(n)
-        for ln in old.splitlines()
-        if UNTICKED.match(ln)
-        for n in RECORD_MARKER.findall(ln)
-    }
-    lines, records = [], []
-    for ln in new.splitlines():
-        found = [int(n) for n in RECORD_MARKER.findall(ln)]
-        if found and TICKED.match(ln) and set(found) & was_unticked:
-            ln = TICKED.sub(r"\1- [ ] ", ln, count=1)
-            records += found
-        lines.append(ln)
-    return "\n".join(lines) + "\n", records
+    return "\n".join(lines) + "\n"
 
 
 def save(body: str, issue: int, data_dir: Path) -> str:
@@ -544,13 +519,11 @@ def main(argv: list[str] | None = None) -> None:
     ``kind`` prints the record kind (or nothing). ``save`` writes the CSV
     files and the reply message; it exits with status 1 and writes the errors
     to the message file if the record is invalid. ``tick`` ticks record
-    ``--issue``'s lines in the check-in body file, in place, and prints
-    ``complete`` or ``open``. ``remove`` deletes record ``--issue``'s rows
-    from the CSV files and writes the reply message (empty if it had none);
-    it needs no ``--body-file``. ``untick`` undoes hand ticks on record lines
-    in the check-in body file (compared with ``--old-body-file``), in place,
-    and prints those records' numbers. ``unticked`` prints a check-in's
-    unticked items, one per line.
+    ``--issue``'s lines in the check-in body file, in place. ``remove``
+    deletes record ``--issue``'s rows from the CSV files and writes the reply
+    message (empty if it had none); it needs no ``--body-file``.
+    ``unticked`` prints a check-in's unticked items, one per line, and
+    ``records`` the numbers of the records it asks to save, space-separated.
 
     Parameters
     ----------
@@ -560,10 +533,9 @@ def main(argv: list[str] | None = None) -> None:
     """
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
-        "command", choices=["kind", "save", "tick", "remove", "untick", "unticked"]
+        "command", choices=["kind", "save", "tick", "remove", "unticked", "records"]
     )
     p.add_argument("--body-file", type=Path)
-    p.add_argument("--old-body-file", type=Path)
     p.add_argument("--issue", type=int)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--message-file", type=Path)
@@ -579,18 +551,13 @@ def main(argv: list[str] | None = None) -> None:
         print(record_kind(body) or "")
         return
     if args.command == "tick":
-        body, complete = tick_check_in(body, args.issue)
-        args.body_file.write_text(body, encoding="utf-8")
-        print("complete" if complete else "open")
-        return
-    if args.command == "untick":
-        old = args.old_body_file.read_text(encoding="utf-8")
-        body, records = untick_by_hand(old, body)
-        args.body_file.write_text(body, encoding="utf-8")
-        print(" ".join(str(n) for n in records))
+        args.body_file.write_text(tick_check_in(body, args.issue), encoding="utf-8")
         return
     if args.command == "unticked":
         print("\n".join(unticked_items(body)))
+        return
+    if args.command == "records":
+        print(" ".join(str(n) for n in check_in_records(body)))
         return
     try:
         message = save(body, args.issue, args.data_dir)

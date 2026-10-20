@@ -271,29 +271,23 @@ CHECK_IN = (
 )
 
 
-def test_tick_check_in_completes_only_when_everything_ticked():
-    """Saving ticks a record's line; the check-in is done once all are ticked."""
-    body, complete = sr.tick_check_in(CHECK_IN, 8)
-    assert "- [x] Your record #8" in body and not complete
-    body, complete = sr.tick_check_in(body, 9)
-    assert "- [x] Save the group record" in body and not complete
+def test_tick_check_in_ticks_only_that_records_lines():
+    """Saving ticks a record's line; the other items are left to people."""
+    body = sr.tick_check_in(CHECK_IN, 8)
+    assert "- [x] Your record #8" in body and "- [ ] Save the group" in body
+    body = sr.tick_check_in(body, 9)
     assert sr.unticked_items(body) == ["The group record #9: add rows"]
-    body = body.replace("- [ ] The group", "- [x] The group")
-    assert sr.unticked_items(body) == []
-    assert sr.tick_check_in(body, 8)[1]
 
 
-def test_hand_ticks_on_record_lines_are_undone():
-    """A person ticking a record line is undone; other ticks are kept."""
-    new = CHECK_IN.replace("- [ ]", "- [x]")
-    body, records = sr.untick_by_hand(CHECK_IN, new)
-    assert records == [8, 9]
-    assert "- [ ] Your record #8" in body and "- [ ] Save the group" in body
-    assert "- [x] The group record #9: add rows" in body
-    # Already ticked by a save before this edit: left alone.
-    saved = sr.tick_check_in(CHECK_IN, 8)[0]
-    body, records = sr.untick_by_hand(saved, saved.replace("- [ ] The", "- [X] The"))
-    assert records == [] and "- [x] Your record #8" in body
+def test_check_in_records_and_unticked_items():
+    """A check-in lists the records to save, and its unticked items' text."""
+    assert sr.check_in_records(CHECK_IN) == [8, 9]
+    assert sr.unticked_items(CHECK_IN) == [
+        "Your record #8",
+        "The group record #9: add rows",
+        "Save the group record #9",
+    ]
+    assert sr.unticked_items(CHECK_IN.replace("- [ ]", "- [x]")) == []
 
 
 @pytest.mark.parametrize("value", ["n/a", "N/A", "na", "-"])

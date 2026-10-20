@@ -196,10 +196,10 @@ def check_in_body(
 ) -> str:
     """Return the body of a member's check-in.
 
-    Lines for records end with a hidden record marker: only a successful
-    ``/save`` of that record ticks them (``save_record`` undoes hand ticks).
-    People tick the other lines themselves, and the check-in closes once
-    every line is ticked.
+    Lines for records end with a hidden record marker, which a successful
+    ``/save`` of that record ticks. People tick the other lines and close the
+    check-in themselves; ``save_record`` reopens it if anything is unticked or
+    a record wasn't saved during the review.
 
     Parameters
     ----------
@@ -241,14 +241,13 @@ def check_in_body(
     if record:
         lines.append(
             f"- [ ] Update your personal record (#{record}), then comment "
-            "`/save` on it: this ticks itself when the record is saved, so "
-            f"don't tick it by hand. {record_marker(record)}"
+            f"`/save` on it; saving ticks this item. {record_marker(record)}"
         )
     if group and is_rep:
         lines.append(
             f"- [ ] Update the group record (#{group}) and review members' "
-            "changes, then comment `/save` on it: this ticks itself when the "
-            f"record is saved. {record_marker(group)}"
+            "changes, then comment `/save` on it; saving ticks this item. "
+            f"{record_marker(group)}"
         )
     elif group:
         lines.append(f"- [ ] Update the group record (#{group}).")
@@ -302,17 +301,17 @@ def check_in_body(
     lines += [
         "",
         (
-            "Tick the other items as you do them. This check-in closes by itself "
-            "once everything is ticked."
+            "Tick the other items as you do them, then **close this check-in**. "
+            "If anything is unticked, or a record above wasn't saved during this "
+            "review, it's reopened with a note of what's left."
         ),
     ]
     if is_rep:
         lines += [
             "",
             (
-                "As the representative, you can close a member's check-in that "
-                "can't be finished, e.g. while they're on leave; when anyone else "
-                "closes an unfinished check-in, it's reopened."
+                "As the representative, you can close any check-in, including a "
+                "member's that can't be finished, e.g. while they're on leave."
             ),
         ]
     return "\n".join(lines) + "\n"

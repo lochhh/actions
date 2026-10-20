@@ -32,9 +32,8 @@ runs:
         AUTHOR: ${{ github.event.issue.user.login }}
         ASSIGNEE: ${{ github.event.issue.assignees[0].login }}
         BODY: ${{ github.event.issue.body }}
-        OLD_BODY: ${{ github.event.changes.body.from }}
-        STATE: ${{ github.event.issue.state }}
         SENDER: ${{ github.event.sender.login }}
+        MILESTONE_CREATED: ${{ github.event.issue.milestone.created_at }}
         BRANCH: ${{ github.event.repository.default_branch }}
         COMMENT: ${{ github.event.comment.body }}
         COMMENTER: ${{ github.event.comment.user.login }}
@@ -84,36 +83,40 @@ runs:
           exit 1
         }
 
-        # A review check-in closes once every box is ticked. Record lines are
-        # ticked only by saving the record (the bot's ticks trigger no events),
-        # so a tick a person gives one is undone. Only maintainers and admins
-        # (the representative) can close a check-in that isn't finished.
+        # Members close their own review check-in when they're done. If items
+        # are unticked, or a record on it wasn't saved during this review (a
+        # bot reply to /save since the milestone was created; a hand tick
+        # doesn't count), it's reopened. Maintainers and admins (the
+        # representative) can close any check-in, e.g. for a member on leave.
         if jq -e 'index("check-in")' <<< "$LABELS" > /dev/null; then
-          if [ "$ACTION" = edited ] && [ "$STATE" = open ]; then
-            printf '%s' "$OLD_BODY" > "$RUNNER_TEMP/old-body.md"
-            records=$(python "$script" untick --body-file "$body_file" --old-body-file "$RUNNER_TEMP/old-body.md")
-            if [ -n "$records" ]; then
-              gh issue edit "$ISSUE" --body-file "$body_file"
-              links=$(printf '#%s ' $records)
-              gh issue comment "$ISSUE" --body "Unticked: a record's line is ticked when the record is saved. Comment \`/save\` on ${links% } instead."
-            fi
-            if [ -z "$(python "$script" unticked --body-file "$body_file")" ]; then
-              gh issue close "$ISSUE" --reason completed --comment "Done: everything is ticked."
-            fi
-          elif [ "$ACTION" = closed ]; then
-            left=$(python "$script" unticked --body-file "$body_file")
-            role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$SENDER/permission" -q .role_name || echo none)
-            if [ -n "$left" ] && [ "$role" != admin ] && [ "$role" != maintain ]; then
-              gh issue reopen "$ISSUE"
-              {
-                echo "Reopened: these items aren't ticked yet:"
-                echo
-                sed 's/^/- /' <<< "$left"
-                echo
-                echo "This check-in closes by itself once everything is ticked."
-              } > "$reply"
-              gh issue comment "$ISSUE" --body-file "$reply"
-            fi
+          if [ "$ACTION" != closed ]; then
+            echo "Check-in edit; nothing to do."
+            exit 0
+          fi
+          role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$SENDER/permission" -q .role_name || echo none)
+          if [ "$role" = admin ] || [ "$role" = maintain ]; then
+            echo "Closed by a maintainer or admin; left closed."
+            exit 0
+          fi
+          missing=()
+          while IFS= read -r item; do
+            [ -n "$item" ] && missing+=("$item (not ticked)")
+          done < <(python "$script" unticked --body-file "$body_file")
+          for record in $(python "$script" records --body-file "$body_file"); do
+            saved=$(gh api "repos/$GITHUB_REPOSITORY/issues/$record/comments?since=$MILESTONE_CREATED&per_page=100" --paginate \
+              --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | startswith("Saved in") or startswith("No changes")) | .id')
+            [ -z "$saved" ] && missing+=("#$record hasn't been saved during this review: comment \`/save\` on it")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            gh issue reopen "$ISSUE"
+            {
+              echo "Reopened: this check-in isn't finished yet."
+              echo
+              printf -- '- %s\n' "${missing[@]}"
+              echo
+              echo "Close it again once everything is done."
+            } > "$reply"
+            gh issue comment "$ISSUE" --body-file "$reply"
           fi
           exit 0
         fi
@@ -224,16 +227,12 @@ runs:
         gh issue comment "$ISSUE" --body-file "$reply"
         gh issue edit "$ISSUE" --remove-label "$unsaved"
 
-        # Tick this record's lines in open review check-ins, and close a
-        # check-in once everything on it is ticked.
+        # Tick this record's lines in open review check-ins.
         { gh issue list --label check-in --state open --limit 500 --json number,body || echo '[]'; } \
           | jq -c --arg m "<!-- record:$ISSUE -->" '.[] | select(.body | contains($m))' \
           | while read -r check_in; do
               number=$(jq -r .number <<< "$check_in")
               jq -r .body <<< "$check_in" > "$RUNNER_TEMP/check-in.md"
-              state=$(python "$script" tick --body-file "$RUNNER_TEMP/check-in.md" --issue "$ISSUE")
+              python "$script" tick --body-file "$RUNNER_TEMP/check-in.md" --issue "$ISSUE"
               gh issue edit "$number" --body-file "$RUNNER_TEMP/check-in.md"
-              if [ "$state" = complete ]; then
-                gh issue close "$number" --reason completed --comment "Done: everything is ticked."
-              fi
             done

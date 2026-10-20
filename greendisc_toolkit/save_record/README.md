@@ -7,8 +7,8 @@ This action saves Green DiSC *record issues* to CSV files. A record issue holds 
 - **When someone comments exactly `/save`** (other comments, like `/saved it`, are ignored), the action reads every table by its column headers, validates the rows and writes them to `<data-dir>/<section>.csv` (e.g. `data/hardware.csv`), replacing the rows previously saved from that issue. It commits to the default branch, replies with a summary and removes the `unsaved changes` label. The issue stays open, so it can be updated later.
 - **When a record's body is edited**, the action adds the `unsaved changes` label, so edits that were never saved are easy to find (`label:"unsaved changes"`).
 - **A personal record can be saved by its owner (with write access) or a maintainer/admin; the group record, which anyone with write access can edit, only by a maintainer/admin.** The action checks the commenter's role, since the workflow's `author_association` filter also lets read-only organisation members through; anyone else gets a reply explaining why nothing was saved.
-- **After a successful save**, the action ticks the record's lines in open review check-ins (issues labelled `check-in`, created by [`review_cycle`](../review_cycle/README.md)), and closes a check-in once everything on it is ticked.
-- **When a check-in is edited**, the action unticks any record line a person ticked by hand (only saving the record ticks it) and replies pointing to `/save`, then closes the check-in if everything is ticked. **When a check-in is closed** with items still unticked, it's reopened with a reply listing them, unless whoever closed it has the Maintain or Admin role (the representative can close a check-in that can't be finished, e.g. for a member on leave). The bot's own edits trigger no events, so these only react to people.
+- **After a successful save**, the action ticks the record's lines in open review check-ins (issues labelled `check-in`, created by [`review_cycle`](../review_cycle/README.md)).
+- **When someone closes a check-in**, the action checks it's finished: every item ticked, and every record on it saved during the review (a reply from the bot to `/save` on that record since the review's milestone was created, so a record line ticked by hand doesn't count). If not, it reopens the check-in with a reply listing what's left. Check-ins closed by someone with the Maintain or Admin role are left closed (the representative can close one that can't be finished, e.g. for a member on leave). Edits to check-ins need no run; the toolkit's workflow skips them.
 - **When a record is closed** (its owner left), the action removes its rows from every CSV file, commits, and replies with what was removed, so the files hold current evidence only. Reopening the record and commenting `/save` restores them.
 - **If any row is invalid**, nothing is written: the reply lists each problem by section, row and column, and the `unsaved changes` label stays.
 
@@ -39,10 +39,12 @@ on:
 jobs:
   record:
     # Issues only (not PRs); a cheap first filter, the action checks roles.
-    # Issue events: edits flag unsaved changes, closing removes the rows.
+    # Issue events: edits flag unsaved changes, closing removes the rows or
+    # checks a check-in is finished. Edits to check-ins need no run.
     if: >-
       !github.event.issue.pull_request &&
-      (github.event_name == 'issues' ||
+      ((github.event_name == 'issues' &&
+          !(github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'check-in'))) ||
         (startsWith(github.event.comment.body, '/save') &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)))
     runs-on: ubuntu-latest

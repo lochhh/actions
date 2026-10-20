@@ -11,7 +11,7 @@ It:
 5. closes the previous cycle: its open check-ins are closed, then its milestone is closed;
 6. writes a summary to the job summary, including records with unsaved changes.
 
-Check-ins are to-do lists, and each closes by itself once every item is ticked. Lines for records end with a hidden `<!-- record:N -->` marker and are ticked only when record N is saved: [`save_record`](../save_record/README.md) ticks them on a successful `/save`, and undoes a tick a person gives them by hand. People tick the other items themselves. A check-in closed while items are still unticked is reopened, unless whoever closed it has the Maintain or Admin role (the representative, e.g. for a member on leave).
+Check-ins are to-do lists. Lines for records end with a hidden `<!-- record:N -->` marker, which [`save_record`](../save_record/README.md) ticks when record N is saved. People tick the other items and close their check-in themselves; `save_record` reopens it if an item is unticked or a record on it wasn't saved during the review, unless whoever closed it has the Maintain or Admin role (the representative, e.g. for a member on leave).
 
 Running it again for the same cycle adds only what's missing, so a failed run can be re-run.
 
