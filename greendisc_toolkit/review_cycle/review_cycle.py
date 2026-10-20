@@ -13,6 +13,7 @@ cycle's milestone is left alone.
 import argparse
 import csv
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -220,9 +221,9 @@ def check_in_body(
     orphans
         Saved rows whose record isn't open (see `orphaned_rows`).
     guide_changes
-        Start date (``YYYY-MM-DD``) of the previous cycle and the number of
-        commits to the guides since then, if any; the representative is asked
-        to update any published copy.
+        Commit range (``base...head``) and the guide files that changed in it
+        since the previous cycle started, if any; the representative is asked
+        to update any published copy, with a link to each file's diff.
 
     Returns
     -------
@@ -269,11 +270,17 @@ def check_in_body(
                 "upstream changes and merge it."
             )
         if guide_changes:
-            since, count = guide_changes
+            # GitHub's compare view can't be limited to a folder, but its
+            # #diff-<sha256 of path> anchors jump to one file's diff.
+            commits, paths = guide_changes
+            links = ", ".join(
+                f"[{Path(p).name}]({site}/compare/{commits}"
+                f"#diff-{hashlib.sha256(p.encode()).hexdigest()})"
+                for p in paths
+            )
             lines.append(
-                f"- [ ] The [guides changed]({site}/commits/HEAD/guides?since={since}) "
-                f"since the last review ({count} commit(s)): if you publish them "
-                "elsewhere, such as your website, update that copy."
+                f"- [ ] The guides changed since the last review ({links}): if you "
+                "publish them elsewhere, such as your website, update that copy."
             )
         if orphans:
             where = "; ".join(
@@ -534,11 +541,18 @@ def start_cycle(
         default=None,
     )
     if previous:
-        since = previous["created_at"][:10]
-        commits = api_list(f"repos/{repo}/commits?path=guides&since={since}T00:00:00Z")
-        if commits:
-            guide_changes = (since, len(commits))
-            report.append(f"Guides changed since {since}: {len(commits)} commit(s).")
+        since = previous["created_at"]
+        commits = api_list(f"repos/{repo}/commits?path=guides&since={since}")
+        # Newest first; the range starts at the parent of the oldest.
+        if commits and commits[-1]["parents"]:
+            span = f"{commits[-1]['parents'][0]['sha']}...{commits[0]['sha']}"
+            files = json.loads(gh("api", f"repos/{repo}/compare/{span}"))["files"]
+            paths = [
+                f["filename"] for f in files if f["filename"].startswith("guides/")
+            ]
+            if paths:
+                guide_changes = (span, paths)
+                report.append(f"Guides changed since {since[:10]}: {', '.join(paths)}.")
     group = min((g["number"] for g in groups), default=None)
     owners = {}
     for r in sorted(records, key=lambda r: r["number"]):

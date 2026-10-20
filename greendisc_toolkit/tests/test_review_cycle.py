@@ -43,12 +43,15 @@ def test_criteria_line_only_with_sync_pr():
 
 
 def test_guides_line_only_when_guides_changed():
-    """The rep is asked to update published guides only after they changed."""
+    """The rep gets a diff link per changed guide, only when guides changed."""
     assert "guides changed" not in body(True)
-    rep = rc.check_in_body("R", DUE, 8, 9, True, "o/r", guide_changes=("2026-09-01", 3))
-    link = "https://github.com/o/r/commits/HEAD/guides?since=2026-09-01"
+    changes = ("aaa...bbb", ["guides/e-waste.md"])
+    rep = rc.check_in_body("R", DUE, 8, 9, True, "o/r", guide_changes=changes)
+    # GitHub's anchor for a file's diff: sha256 of its path.
+    anchor = "f306affd1e555ff181ffe63c6afa3b2f5f1a154fe288ab9508befa9a2946c7c5"
+    link = f"https://github.com/o/r/compare/aaa...bbb#diff-{anchor}"
     assert (
-        f"- [ ] The [guides changed]({link}) since the last review (3 commit(s))" in rep
+        f"- [ ] The guides changed since the last review ([e-waste.md]({link}))" in rep
     )
 
 
