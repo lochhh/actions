@@ -378,7 +378,10 @@ def write_csv(path: Path, issue: int, columns: list[str], rows: list[dict]) -> N
 
 
 def unticked_items(body: str) -> list[str]:
-    """Return the unticked items of a review check-in.
+    """Return the unticked items of a review check-in, other than records.
+
+    Record lines are left out: what counts for them is whether the record was
+    saved, not their tick (see `check_in_records`).
 
     Parameters
     ----------
@@ -388,13 +391,13 @@ def unticked_items(body: str) -> list[str]:
     Returns
     -------
     list of str
-        Text of each unticked ``- [ ]`` line, without the box or markers.
+        Text of each unticked ``- [ ]`` line without a record marker.
 
     """
     return [
-        RECORD_MARKER.sub("", m[1]).strip()
+        m[1].strip()
         for m in (UNTICKED.match(ln) for ln in body.splitlines())
-        if m
+        if m and not RECORD_MARKER.search(m[1])
     ]
 
 

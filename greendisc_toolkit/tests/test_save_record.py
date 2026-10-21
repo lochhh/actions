@@ -280,13 +280,9 @@ def test_tick_check_in_ticks_only_that_records_lines():
 
 
 def test_check_in_records_and_unticked_items():
-    """A check-in lists the records to save, and its unticked items' text."""
+    """Records are checked by saving; only other unticked items are listed."""
     assert sr.check_in_records(CHECK_IN) == [8, 9]
-    assert sr.unticked_items(CHECK_IN) == [
-        "Your record #8",
-        "The group record #9: add rows",
-        "Save the group record #9",
-    ]
+    assert sr.unticked_items(CHECK_IN) == ["The group record #9: add rows"]
     assert sr.unticked_items(CHECK_IN.replace("- [ ]", "- [x]")) == []
 
 

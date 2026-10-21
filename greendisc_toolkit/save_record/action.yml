@@ -227,12 +227,21 @@ runs:
         gh issue comment "$ISSUE" --body-file "$reply"
         gh issue edit "$ISSUE" --remove-label "$unsaved"
 
-        # Tick this record's lines in open review check-ins.
+        # Tick this record's lines in open review check-ins. Another save may
+        # edit the same check-in at the same time (the representative's lists
+        # two records), and the later edit would undo this tick: re-read and
+        # retry until it sticks.
+        marker="<!-- record:$ISSUE -->"
         { gh issue list --label check-in --state open --limit 500 --json number,body || echo '[]'; } \
-          | jq -c --arg m "<!-- record:$ISSUE -->" '.[] | select(.body | contains($m))' \
-          | while read -r check_in; do
-              number=$(jq -r .number <<< "$check_in")
-              jq -r .body <<< "$check_in" > "$RUNNER_TEMP/check-in.md"
-              python "$script" tick --body-file "$RUNNER_TEMP/check-in.md" --issue "$ISSUE"
-              gh issue edit "$number" --body-file "$RUNNER_TEMP/check-in.md"
+          | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .number' \
+          | while read -r number; do
+              for attempt in 1 2 3 4 5; do
+                gh issue view "$number" --json body --jq .body > "$RUNNER_TEMP/check-in.md"
+                if ! grep -qF -- "- [ ] " <(grep -F -- "$marker" "$RUNNER_TEMP/check-in.md"); then
+                  break
+                fi
+                python "$script" tick --body-file "$RUNNER_TEMP/check-in.md" --issue "$ISSUE"
+                gh issue edit "$number" --body-file "$RUNNER_TEMP/check-in.md" > /dev/null
+                sleep $((attempt * 2))
+              done
             done
